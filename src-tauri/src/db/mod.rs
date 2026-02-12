@@ -28,20 +28,22 @@ pub fn get_db_path(_app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
 pub fn open_connection(db_path: &PathBuf) -> Result<Connection, String> {
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
 
-    // Получаем ключ шифрования
+    // Получаем ключ шифрования (hex)
     let key = crate::crypto::get_or_create_key()?;
 
-    // Применяем настройки SQLCipher
-    conn.execute_batch(&format!(
-        "PRAGMA key = 'x\"{}\"';
-         PRAGMA cipher_page_size = 4096;
+    // Ключ задаём первым и в формате blob literal x'hex' (требование SQLCipher для сырого ключа)
+    conn.execute(&format!("PRAGMA key = \"x'{}'\"", key), [])
+        .map_err(|e| format!("Failed to configure SQLCipher: {}", e))?;
+
+    // Остальные настройки SQLCipher и журнала
+    conn.execute_batch(
+        "PRAGMA cipher_page_size = 4096;
          PRAGMA kdf_iter = 256000;
          PRAGMA cipher_hmac_algorithm = HMAC_SHA256;
          PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA256;
          PRAGMA journal_mode = WAL;
          PRAGMA synchronous = NORMAL;",
-        key
-    ))
+    )
     .map_err(|e| format!("Failed to configure SQLCipher: {}", e))?;
 
     // Проверяем, что ключ работает, выполняя простой запрос
@@ -104,10 +106,10 @@ pub fn migrate_to_encrypted(
         .query_row("SELECT count(*) FROM sqlite_master", [], |_| Ok(()))
         .map_err(|e| format!("Source database is not valid: {}", e))?;
 
-    // Экспортируем в зашифрованную БД
+    // Экспортируем в зашифрованную БД (ключ в формате x'hex')
     old_conn
         .execute_batch(&format!(
-            "ATTACH DATABASE '{}' AS encrypted KEY 'x\"{}\"';
+            "ATTACH DATABASE '{}' AS encrypted KEY \"x'{}'\";
              SELECT sqlcipher_export('encrypted');
              DETACH DATABASE encrypted;",
             new_path.display(),
