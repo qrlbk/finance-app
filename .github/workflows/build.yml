@@ -43,10 +43,15 @@ jobs:
       - name: Install OpenSSL (Windows)
         if: matrix.platform == 'windows-latest'
         run: |
-          curl -L -o openssl.msi https://slproweb.com/download/Win64OpenSSL-3_2_1.msi
-          msiexec /i openssl.msi /quiet /qn TARGETDIR="C:\Program Files\OpenSSL-Win64"
-          echo "OPENSSL_DIR=C:\Program Files\OpenSSL-Win64" >> $env:GITHUB_ENV
-          echo "OPENSSL_STATIC=1" >> $env:GITHUB_ENV
+          choco install openssl --version=3.1.1 -y --no-progress
+          $opensslPath = "C:\Program Files\OpenSSL-Win64"
+          if (!(Test-Path "$opensslPath\include")) {
+            $opensslPath = "C:\Program Files\OpenSSL"
+          }
+          echo "OPENSSL_DIR=$opensslPath" >> $env:GITHUB_ENV
+          echo "OPENSSL_LIB_DIR=$opensslPath\lib" >> $env:GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$opensslPath\include" >> $env:GITHUB_ENV
+          dir "$opensslPath"
         shell: pwsh
 
       - name: Install dependencies (Ubuntu)
@@ -63,7 +68,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENSSL_DIR: ${{ env.OPENSSL_DIR }}
-          OPENSSL_STATIC: ${{ env.OPENSSL_STATIC }}
+          OPENSSL_LIB_DIR: ${{ env.OPENSSL_LIB_DIR }}
+          OPENSSL_INCLUDE_DIR: ${{ env.OPENSSL_INCLUDE_DIR }}
         with:
           args: ${{ matrix.args }}
 
