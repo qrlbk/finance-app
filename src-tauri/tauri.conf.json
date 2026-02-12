@@ -42,14 +42,14 @@
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
-      "timestampUrl": ""
-    },
-    "nsis": {
-      "installerIcon": "icons/icon.ico",
-      "installMode": "currentUser",
-      "languages": ["Russian", "English"],
-      "displayLanguageSelector": true,
-      "license": "LICENSE.txt"
+      "timestampUrl": "",
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser",
+        "languages": ["Russian", "English"],
+        "displayLanguageSelector": true,
+        "license": "LICENSE.txt"
+      }
     }
   }
 }
