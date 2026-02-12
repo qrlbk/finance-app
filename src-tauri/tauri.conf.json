@@ -38,18 +38,6 @@
     "copyright": "© 2024 Kuralbek Adilet. Все права защищены.",
     "category": "Finance",
     "shortDescription": "Приложение для учёта личных финансов",
-    "longDescription": "Личная Бухгалтерия — современное приложение для управления личными финансами. Учёт доходов и расходов, бюджеты, отчёты, импорт банковских выписок. Все данные хранятся локально и зашифрованы.",
-    "windows": {
-      "certificateThumbprint": null,
-      "digestAlgorithm": "sha256",
-      "timestampUrl": "",
-      "nsis": {
-        "installerIcon": "icons/icon.ico",
-        "installMode": "currentUser",
-        "languages": ["Russian", "English"],
-        "displayLanguageSelector": true,
-        "license": "LICENSE.txt"
-      }
-    }
+    "longDescription": "Личная Бухгалтерия — современное приложение для управления личными финансами. Учёт доходов и расходов, бюджеты, отчёты, импорт банковских выписок. Все данные хранятся локально и зашифрованы."
   }
 }
