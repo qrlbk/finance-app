@@ -1,0 +1,54 @@
+stages:
+  - build
+
+variables:
+  NODE_VERSION: "20"
+
+# Linux
+build:linux:
+  stage: build
+  image: node:${NODE_VERSION}-bookworm
+  before_script:
+    - apt-get update
+    - apt-get install -y curl libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+    - source "$HOME/.cargo/env"
+    - npm ci
+  script:
+    - source "$HOME/.cargo/env" && npx tauri build
+  artifacts:
+    paths:
+      - src-tauri/target/release/bundle/appimage/*.AppImage
+      - src-tauri/target/release/bundle/deb/*.deb
+    name: linux-installer
+
+# macOS (нужен runner с тегом macos; vendored OpenSSL в rusqlite)
+build:macos:
+  stage: build
+  tags:
+    - macos
+  before_script:
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --target aarch64-apple-darwin,x86_64-apple-darwin
+    - source "$HOME/.cargo/env"
+    - npm ci
+  script:
+    - source "$HOME/.cargo/env" && npx tauri build -- --target universal-apple-darwin
+  artifacts:
+    paths:
+      - src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+    name: macos-installer
+
+# Windows (нужен runner с тегом windows)
+build:windows:
+  stage: build
+  tags:
+    - windows
+  before_script:
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+    - npm ci
+  script:
+    - npx tauri build
+  artifacts:
+    paths:
+      - src-tauri/target/release/bundle/nsis/*.exe
+    name: windows-installer
