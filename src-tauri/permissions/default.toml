@@ -1,0 +1,53 @@
+[[permission]]
+identifier = "finance-commands"
+description = "Finance app commands"
+commands.allow = [
+  # Account commands
+  "get_accounts",
+  "create_account",
+  "update_account",
+  "delete_account",
+  # Category commands
+  "get_categories",
+  "create_category",
+  "update_category",
+  "delete_category",
+  # Transaction commands
+  "get_transactions",
+  "create_transaction",
+  "update_transaction",
+  "delete_transaction",
+  "create_transfer",
+  # Summary and reports
+  "get_summary",
+  "get_expense_by_category",
+  "get_monthly_totals",
+  # Backup/Export
+  "export_backup",
+  "restore_backup",
+  "export_data",
+  "import_data",
+  "open_file",
+  # ML commands
+  "predict_category",
+  "train_model",
+  "get_model_status",
+  "get_insights",
+  "get_smart_insights",
+  "get_forecast_details",
+  # Recurring payments
+  "get_recurring_payments",
+  "create_recurring",
+  "update_recurring",
+  "delete_recurring",
+  "process_recurring_payments",
+  # Budget commands
+  "get_budgets",
+  "create_budget",
+  "update_budget",
+  "delete_budget",
+  "get_budget_alerts",
+  # Bank statement import
+  "parse_bank_statement",
+  "import_bank_transactions"
+]

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Личная Бухгалтерия",
+  "version": "1.0.0",
+  "identifier": "com.kuralbekadilet475.finance-app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Личная Бухгалтерия",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis", "dmg", "app"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "publisher": "Kuralbek Adilet",
+    "copyright": "© 2024 Kuralbek Adilet. Все права защищены.",
+    "category": "Finance",
+    "shortDescription": "Приложение для учёта личных финансов",
+    "longDescription": "Личная Бухгалтерия — современное приложение для управления личными финансами. Учёт доходов и расходов, бюджеты, отчёты, импорт банковских выписок. Все данные хранятся локально и зашифрованы.",
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    },
+    "nsis": {
+      "installerIcon": "icons/icon.ico",
+      "installMode": "currentUser",
+      "languages": ["Russian", "English"],
+      "displayLanguageSelector": true,
+      "license": "LICENSE.txt"
+    }
+  }
+}
