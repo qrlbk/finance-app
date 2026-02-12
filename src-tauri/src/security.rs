@@ -3,6 +3,7 @@
 use crate::error::{AppError, ValidationError};
 
 /// Maximum allowed string length for various fields
+#[allow(dead_code)]
 pub mod limits {
     pub const NAME_MAX_LEN: usize = 100;
     pub const NOTE_MAX_LEN: usize = 500;

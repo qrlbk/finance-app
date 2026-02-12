@@ -4,7 +4,6 @@ use crate::export;
 use crate::ml::{self, model::ModelStatus};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
