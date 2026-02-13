@@ -288,3 +288,5 @@ MIT License
 ## Автор
 
 Kuralbek Adilet
+
+**Поддержка:** kuralbekadilet475@gmail.com
