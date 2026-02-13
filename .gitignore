@@ -13,10 +13,13 @@ src-tauri/target/
 *.swo
 .DS_Store
 
-# Environment
+# Environment and secrets
 .env
 .env.local
 .env.*.local
+.env.production
+*.pem
+*.key
 
 # Logs
 *.log
