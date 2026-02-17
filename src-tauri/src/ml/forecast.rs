@@ -28,13 +28,12 @@ pub struct ExpenseForecaster;
 impl ExpenseForecaster {
     /// Forecast expenses for the next month
     /// Uses Holt's double exponential smoothing for better trend handling
-    pub fn forecast_next_month(conn: &Connection) -> Result<Forecast, String> {
-        // Get monthly expense totals for the last 12 months
+    pub fn forecast_next_month(conn: &Connection, user_id: i64) -> Result<Forecast, String> {
         let mut stmt = conn
             .prepare(
                 "SELECT strftime('%Y-%m', date) as month, SUM(amount) as total
                  FROM transactions
-                 WHERE type = 'expense'
+                 WHERE user_id = ?1 AND type = 'expense'
                    AND date >= date('now', '-12 months')
                  GROUP BY month
                  ORDER BY month"
@@ -42,9 +41,9 @@ impl ExpenseForecaster {
             .map_err(|e| format!("Query error: {}", e))?;
 
         let monthly_totals: Vec<f64> = stmt
-            .query_map([], |row| {
+            .query_map([user_id], |row| {
                 let total: f64 = row.get(1)?;
-                Ok(total)
+                Ok(total.abs())
             })
             .map_err(|e| format!("Query error: {}", e))?
             .filter_map(|r| r.ok())
@@ -183,28 +182,27 @@ impl ExpenseForecaster {
     }
 
     /// Get forecast with optional breakdown by category
-    pub fn forecast_with_categories(conn: &Connection) -> Result<(Forecast, Vec<CategoryForecast>), String> {
-        let overall = Self::forecast_next_month(conn)?;
+    pub fn forecast_with_categories(conn: &Connection, user_id: i64) -> Result<(Forecast, Vec<CategoryForecast>), String> {
+        let overall = Self::forecast_next_month(conn, user_id)?;
 
-        // Get category-level forecasts
         let mut category_forecasts = Vec::new();
 
         let categories: Vec<(i64, String)> = conn
             .prepare(
                 "SELECT DISTINCT c.id, c.name 
                  FROM categories c
-                 JOIN transactions t ON c.id = t.category_id
-                 WHERE t.type = 'expense'
+                 JOIN transactions t ON c.id = t.category_id AND t.user_id = c.user_id
+                 WHERE t.user_id = ?1 AND t.type = 'expense'
                    AND t.date >= date('now', '-6 months')"
             )
             .and_then(|mut stmt| {
-                stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                stmt.query_map([user_id], |row| Ok((row.get(0)?, row.get(1)?)))
                     .map(|rows| rows.filter_map(|r| r.ok()).collect())
             })
             .unwrap_or_default();
 
         for (cat_id, cat_name) in categories {
-            if let Ok(forecast) = Self::forecast_category(conn, cat_id) {
+            if let Ok(forecast) = Self::forecast_category(conn, user_id, cat_id) {
                 category_forecasts.push(CategoryForecast {
                     category_id: cat_id,
                     category_name: cat_name,
@@ -217,13 +215,13 @@ impl ExpenseForecaster {
     }
 
     /// Forecast for a specific category
-    fn forecast_category(conn: &Connection, category_id: i64) -> Result<f64, String> {
+    fn forecast_category(conn: &Connection, user_id: i64, category_id: i64) -> Result<f64, String> {
         let mut stmt = conn
             .prepare(
                 "SELECT strftime('%Y-%m', date) as month, SUM(amount) as total
                  FROM transactions
-                 WHERE type = 'expense'
-                   AND category_id = ?1
+                 WHERE user_id = ?1 AND type = 'expense'
+                   AND category_id = ?2
                    AND date >= date('now', '-6 months')
                  GROUP BY month
                  ORDER BY month"
@@ -231,9 +229,9 @@ impl ExpenseForecaster {
             .map_err(|e| format!("Query error: {}", e))?;
 
         let monthly_totals: Vec<f64> = stmt
-            .query_map([category_id], |row| {
+            .query_map(rusqlite::params![user_id, category_id], |row| {
                 let total: f64 = row.get(1)?;
-                Ok(total)
+                Ok(total.abs())
             })
             .map_err(|e| format!("Query error: {}", e))?
             .filter_map(|r| r.ok())

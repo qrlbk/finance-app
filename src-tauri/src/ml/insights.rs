@@ -6,6 +6,8 @@ use rusqlite::Connection;
 use serde::Serialize;
 use chrono::{NaiveDate, Datelike, Months};
 
+use crate::messages;
+
 /// Spending pattern for a category
 #[derive(Debug, Serialize, Clone)]
 pub struct SpendingPattern {
@@ -48,12 +50,12 @@ pub struct SmartInsights {
     pub high_spending_days: Vec<String>,
 }
 
-/// Analyze spending patterns from transaction data
-pub fn analyze_spending_patterns(conn: &Connection) -> Result<SmartInsights, String> {
-    let patterns = get_category_patterns(conn)?;
-    let suggestions = generate_savings_suggestions(conn, &patterns)?;
-    let monthly_comparison = get_monthly_comparison(conn)?;
-    let high_spending_days = get_high_spending_days(conn)?;
+/// Analyze spending patterns from transaction data for the given user.
+pub fn analyze_spending_patterns(conn: &Connection, user_id: i64) -> Result<SmartInsights, String> {
+    let patterns = get_category_patterns(conn, user_id)?;
+    let suggestions = generate_savings_suggestions(conn, user_id, &patterns)?;
+    let monthly_comparison = get_monthly_comparison(conn, user_id)?;
+    let high_spending_days = get_high_spending_days(conn, user_id)?;
 
     Ok(SmartInsights {
         patterns,
@@ -63,14 +65,14 @@ pub fn analyze_spending_patterns(conn: &Connection) -> Result<SmartInsights, Str
     })
 }
 
-fn get_category_patterns(conn: &Connection) -> Result<Vec<SpendingPattern>, String> {
+fn get_category_patterns(conn: &Connection, user_id: i64) -> Result<Vec<SpendingPattern>, String> {
     let now = chrono::Local::now();
     let three_months_ago = now.date_naive()
         .checked_sub_months(Months::new(3))
-        .ok_or("Date calculation failed")?;
+        .ok_or_else(|| messages::ERR_DATE_CALCULATION_FAILED.to_string())?;
     let one_month_ago = now.date_naive()
         .checked_sub_months(Months::new(1))
-        .ok_or("Date calculation failed")?;
+        .ok_or_else(|| messages::ERR_DATE_CALCULATION_FAILED.to_string())?;
 
     let mut stmt = conn
         .prepare(
@@ -80,8 +82,8 @@ fn get_category_patterns(conn: &Connection) -> Result<Vec<SpendingPattern>, Stri
                     SUM(CASE WHEN t.date >= ?2 THEN ABS(t.amount) ELSE 0 END) as recent_total,
                     SUM(CASE WHEN t.date < ?2 AND t.date >= ?1 THEN ABS(t.amount) ELSE 0 END) as older_total
              FROM transactions t
-             JOIN categories c ON t.category_id = c.id
-             WHERE t.type = 'expense' AND t.date >= ?1
+             JOIN categories c ON t.category_id = c.id AND c.user_id = t.user_id
+             WHERE t.user_id = ?3 AND t.type = 'expense' AND t.date >= ?1
              GROUP BY c.id
              HAVING tx_count >= 3
              ORDER BY avg_amount DESC"
@@ -92,7 +94,7 @@ fn get_category_patterns(conn: &Connection) -> Result<Vec<SpendingPattern>, Stri
     let one_month_str = one_month_ago.format("%Y-%m-%d").to_string();
 
     let rows = stmt
-        .query_map(rusqlite::params![&three_months_str, &one_month_str], |row| {
+        .query_map(rusqlite::params![&three_months_str, &one_month_str, user_id], |row| {
             let name: String = row.get(0)?;
             let color: Option<String> = row.get(1)?;
             let tx_count: i64 = row.get(2)?;
@@ -151,7 +153,8 @@ fn get_category_patterns(conn: &Connection) -> Result<Vec<SpendingPattern>, Stri
 }
 
 fn generate_savings_suggestions(
-    conn: &Connection,
+    _conn: &Connection,
+    _user_id: i64,
     patterns: &[SpendingPattern],
 ) -> Result<Vec<SavingsSuggestion>, String> {
     let mut suggestions = Vec::new();
@@ -205,30 +208,28 @@ fn generate_savings_suggestions(
     Ok(suggestions)
 }
 
-fn get_monthly_comparison(conn: &Connection) -> Result<MonthlyComparison, String> {
+fn get_monthly_comparison(conn: &Connection, user_id: i64) -> Result<MonthlyComparison, String> {
     let now = chrono::Local::now();
     let current_month_start = format!("{}-{:02}-01", now.year(), now.month());
     let prev_month_start = now.date_naive()
         .checked_sub_months(Months::new(1))
         .map(|d| format!("{}-{:02}-01", d.year(), d.month()))
-        .ok_or("Date calculation failed")?;
+        .ok_or_else(|| messages::ERR_DATE_CALCULATION_FAILED.to_string())?;
 
-    // Current month total
     let current_total: f64 = conn
         .query_row(
             "SELECT COALESCE(ABS(SUM(amount)), 0) FROM transactions 
-             WHERE type = 'expense' AND date >= ?1",
-            [&current_month_start],
+             WHERE user_id = ?1 AND type = 'expense' AND date >= ?2",
+            rusqlite::params![user_id, &current_month_start],
             |r| r.get(0),
         )
         .unwrap_or(0.0);
 
-    // Previous month total
     let prev_total: f64 = conn
         .query_row(
             "SELECT COALESCE(ABS(SUM(amount)), 0) FROM transactions 
-             WHERE type = 'expense' AND date >= ?1 AND date < ?2",
-            rusqlite::params![&prev_month_start, &current_month_start],
+             WHERE user_id = ?1 AND type = 'expense' AND date >= ?2 AND date < ?3",
+            rusqlite::params![user_id, &prev_month_start, &current_month_start],
             |r| r.get(0),
         )
         .unwrap_or(0.0);
@@ -239,16 +240,15 @@ fn get_monthly_comparison(conn: &Connection) -> Result<MonthlyComparison, String
         0.0
     };
 
-    // Find top increase category
     let top_increase: Option<String> = conn
         .query_row(
             "SELECT c.name FROM transactions t
-             JOIN categories c ON t.category_id = c.id
-             WHERE t.type = 'expense' AND t.date >= ?1
+             JOIN categories c ON t.category_id = c.id AND c.user_id = t.user_id
+             WHERE t.user_id = ?1 AND t.type = 'expense' AND t.date >= ?2
              GROUP BY c.id
              ORDER BY SUM(ABS(t.amount)) DESC
              LIMIT 1",
-            [&current_month_start],
+            rusqlite::params![user_id, &current_month_start],
             |r| r.get(0),
         )
         .ok();
@@ -262,7 +262,7 @@ fn get_monthly_comparison(conn: &Connection) -> Result<MonthlyComparison, String
     })
 }
 
-fn get_high_spending_days(conn: &Connection) -> Result<Vec<String>, String> {
+fn get_high_spending_days(conn: &Connection, user_id: i64) -> Result<Vec<String>, String> {
     let now = chrono::Local::now();
     let month_start = format!("{}-{:02}-01", now.year(), now.month());
 
@@ -270,7 +270,7 @@ fn get_high_spending_days(conn: &Connection) -> Result<Vec<String>, String> {
         .prepare(
             "SELECT date, SUM(ABS(amount)) as total
              FROM transactions
-             WHERE type = 'expense' AND date >= ?1
+             WHERE user_id = ?1 AND type = 'expense' AND date >= ?2
              GROUP BY date
              ORDER BY total DESC
              LIMIT 3"
@@ -278,7 +278,7 @@ fn get_high_spending_days(conn: &Connection) -> Result<Vec<String>, String> {
         .map_err(|e| e.to_string())?;
 
     let rows = stmt
-        .query_map([&month_start], |row| {
+        .query_map(rusqlite::params![user_id, &month_start], |row| {
             let date: String = row.get(0)?;
             let total: f64 = row.get(1)?;
             Ok(format!("{}: {:.0} ₸", date, total))

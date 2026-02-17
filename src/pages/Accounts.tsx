@@ -52,7 +52,14 @@ export function Accounts() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: number } | null>(null);
-  const [form, setForm] = useState({ name: "", account_type: "card", currency: "KZT" });
+  const [reassignDialog, setReassignDialog] = useState<{ accountId: number } | null>(null);
+  const [reassignToId, setReassignToId] = useState<number>(0);
+  const [form, setForm] = useState({
+    name: "",
+    account_type: "card",
+    currency: "KZT",
+    initial_balance: "",
+  });
 
   const loadAccounts = async () => {
     try {
@@ -83,10 +90,21 @@ export function Accounts() {
         });
         showToast("Счёт обновлён", "success");
       } else {
-        await api.createAccount(form);
+        const initialBalance =
+          form.initial_balance === "" || form.initial_balance === undefined
+            ? undefined
+            : parseFloat(String(form.initial_balance).replace(/\s/g, ""));
+        await api.createAccount({
+          name: form.name,
+          account_type: form.account_type,
+          currency: form.currency,
+          ...(Number.isFinite(initialBalance) && initialBalance !== 0
+            ? { initial_balance: initialBalance }
+            : {}),
+        });
         showToast("Счёт создан", "success");
       }
-      setForm({ name: "", account_type: "card", currency: "KZT" });
+      setForm({ name: "", account_type: "card", currency: "KZT", initial_balance: "" });
       setShowForm(false);
       setEditingId(null);
       loadAccounts();
@@ -101,6 +119,7 @@ export function Accounts() {
       name: acc.name,
       account_type: acc.account_type,
       currency: acc.currency,
+      initial_balance: "",
     });
     setEditingId(acc.id);
     setShowForm(true);
@@ -118,15 +137,37 @@ export function Accounts() {
       loadAccounts();
       showToast("Счёт удалён", "success");
     } catch (e) {
+      const msg = String(e);
+      if (msg.includes("транзакциями")) {
+        setReassignDialog({ accountId: deleteConfirm.id });
+        setReassignToId(accounts.find((a) => a.id !== deleteConfirm.id)?.id ?? 0);
+        setDeleteConfirm(null);
+      } else {
+        setError(msg);
+        showToast("Ошибка при удалении", "error");
+      }
+    }
+  };
+
+  const handleReassignAndDelete = async () => {
+    if (!reassignDialog || reassignToId === 0 || reassignToId === reassignDialog.accountId) return;
+    try {
+      await api.reassignTransactionsToAccount(reassignDialog.accountId, reassignToId);
+      await api.deleteAccount(reassignDialog.accountId);
+      setReassignDialog(null);
+      setReassignToId(0);
+      loadAccounts();
+      showToast("Транзакции перенесены, счёт удалён", "success");
+    } catch (e) {
       setError(String(e));
-      showToast("Ошибка при удалении", "error");
+      showToast("Ошибка при переносе или удалении", "error");
     }
   };
 
   const cancelForm = () => {
     setShowForm(false);
     setEditingId(null);
-    setForm({ name: "", account_type: "card", currency: "KZT" });
+    setForm({ name: "", account_type: "card", currency: "KZT", initial_balance: "" });
   };
 
   // Calculate total balance
@@ -153,7 +194,7 @@ export function Accounts() {
           onClick={() => {
             setShowForm(true);
             setEditingId(null);
-            setForm({ name: "", account_type: "card", currency: "KZT" });
+            setForm({ name: "", account_type: "card", currency: "KZT", initial_balance: "" });
           }}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
         >
@@ -222,6 +263,26 @@ export function Accounts() {
               <option value="RUB">RUB - Рубль</option>
             </select>
           </div>
+          {!editingId && (
+            <div>
+              <label className="block text-sm text-zinc-400 mb-1">
+                Стартовый капитал
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={form.initial_balance}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, initial_balance: e.target.value }))
+                }
+                className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder-zinc-500 form-transition focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                placeholder="Сколько уже есть на счёте (например, на карте)"
+              />
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                Укажите текущий баланс счёта, если он уже есть. Можно оставить пустым.
+              </p>
+            </div>
+          )}
           <div className="flex gap-2">
             <button
               type="submit"
@@ -317,7 +378,7 @@ export function Accounts() {
               onClick={() => {
                 setShowForm(true);
                 setEditingId(null);
-                setForm({ name: "", account_type: "card", currency: "KZT" });
+                setForm({ name: "", account_type: "card", currency: "KZT", initial_balance: "" });
               }}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
             >
@@ -331,12 +392,71 @@ export function Accounts() {
       <ConfirmDialog
         open={deleteConfirm !== null}
         title="Удалить счёт?"
-        message="Счёт можно удалить только если по нему нет транзакций."
+        message="Счёт можно удалить только если по нему нет транзакций. Если есть транзакции, вы сможете перенести их на другой счёт."
         confirmLabel="Удалить"
         variant="danger"
         onConfirm={handleDeleteConfirm}
         onCancel={() => setDeleteConfirm(null)}
       />
+
+      {reassignDialog && (() => {
+        const targetAccounts = accounts.filter((a) => a.id !== reassignDialog.accountId);
+        const canReassign = targetAccounts.length > 0 && reassignToId > 0 && reassignToId !== reassignDialog.accountId;
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reassign-dialog-title"
+            onClick={() => setReassignDialog(null)}
+          >
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-overlay" />
+            <div
+              className="relative w-full max-w-md rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-2xl p-6 animate-scale-in"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 id="reassign-dialog-title" className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
+                Перенести транзакции
+              </h3>
+              <p className="text-zinc-600 dark:text-zinc-400 mb-4">
+                {targetAccounts.length === 0
+                  ? "У этого счёта есть транзакции. Добавьте другой счёт, чтобы перенести на него транзакции и затем удалить этот."
+                  : "У счёта есть транзакции. Выберите счёт, на который их перенести:"}
+              </p>
+              {targetAccounts.length > 0 && (
+                <select
+                  value={reassignToId}
+                  onChange={(e) => setReassignToId(Number(e.target.value))}
+                  className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white mb-6 form-transition focus:ring-2 focus:ring-emerald-500"
+                >
+                  {targetAccounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setReassignDialog(null)}
+                  className="px-4 py-2.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 btn-transition"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReassignAndDelete}
+                  disabled={!canReassign}
+                  className="px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white btn-transition"
+                >
+                  Перенести и удалить
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

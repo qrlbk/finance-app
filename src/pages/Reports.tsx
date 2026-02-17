@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
-import { TrendingUp, TrendingDown, PieChart as PieIcon, BarChart3 } from "lucide-react";
-import { api } from "../lib/api";
+import { TrendingUp, TrendingDown, PieChart as PieIcon, BarChart3, Wallet, Table2, Sparkles } from "lucide-react";
+import { api, type ForecastDetails } from "../lib/api";
 
 const COLORS = ["#22c55e", "#3b82f6", "#f97316", "#eab308", "#ec4899", "#8b5cf6", "#06b6d4", "#64748b"];
 
@@ -62,22 +62,30 @@ function renderCustomLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent
 export function Reports() {
   const [categoryData, setCategoryData] = useState<{ category_name: string; total: number }[]>([]);
   const [monthlyData, setMonthlyData] = useState<{ month: string; income: number; expense: number }[]>([]);
+  const [summary, setSummary] = useState<{ total_balance: number; income_month: number; expense_month: number } | null>(null);
+  const [forecast, setForecast] = useState<ForecastDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [monthsCount, setMonthsCount] = useState(6);
+  const [includeSubcategories, setIncludeSubcategories] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
         setError(null);
-        const [cat, mon] = await Promise.all([
-          api.getExpenseByCategory({ year, month }),
-          api.getMonthlyTotals({ months: 6 }),
+        const [cat, mon, sum, fc] = await Promise.all([
+          api.getExpenseByCategory({ year, month, include_children: includeSubcategories }),
+          api.getMonthlyTotals({ months: monthsCount }),
+          api.getSummary().catch(() => null),
+          api.getForecastDetails().catch(() => null),
         ]);
         setCategoryData(cat);
         setMonthlyData(mon);
+        setSummary(sum ?? null);
+        setForecast(fc ?? null);
       } catch (e) {
         setError(String(e));
       } finally {
@@ -85,7 +93,7 @@ export function Reports() {
       }
     };
     load();
-  }, [year, month]);
+  }, [year, month, monthsCount, includeSubcategories]);
 
   const pieData = categoryData.map((d, i) => ({
     name: d.category_name,
@@ -115,16 +123,37 @@ export function Reports() {
         </div>
       )}
 
+      {/* Summary card */}
+      {summary && (
+        <div className="p-5 rounded-xl bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border border-emerald-500/20 dark:border-emerald-500/30 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-emerald-500/20">
+              <Wallet size={22} className="text-emerald-500" />
+            </div>
+            <div>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">Общий баланс</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{formatAmount(summary.total_balance)}</p>
+            </div>
+            <div className="ml-auto text-right text-sm">
+              <p className="text-zinc-500 dark:text-zinc-400">Накопления за месяц</p>
+              <p className={`font-semibold ${summary.income_month - summary.expense_month >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                {formatAmount(summary.income_month - summary.expense_month)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Period selector */}
       <div className="flex flex-wrap gap-4 items-end">
         <div>
-          <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1">Год</label>
+          <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1">Год (для круговой диаграммы)</label>
           <select
             value={year}
             onChange={(e) => setYear(+e.target.value)}
             className="px-4 py-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white form-transition focus:ring-2 focus:ring-emerald-500"
           >
-            {[2024, 2025, 2026].map((y) => (
+            {[2024, 2025, 2026, 2027].map((y) => (
               <option key={y} value={y}>
                 {y}
               </option>
@@ -147,6 +176,28 @@ export function Reports() {
               </option>
             ))}
           </select>
+        </div>
+        <div>
+          <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1">Период графика (мес.)</label>
+          <select
+            value={monthsCount}
+            onChange={(e) => setMonthsCount(+e.target.value)}
+            className="px-4 py-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white form-transition focus:ring-2 focus:ring-emerald-500"
+          >
+            <option value={6}>6 месяцев</option>
+            <option value={12}>12 месяцев</option>
+          </select>
+        </div>
+        <div className="flex items-end">
+          <label className="flex items-center gap-2 cursor-pointer text-sm text-zinc-600 dark:text-zinc-300">
+            <input
+              type="checkbox"
+              checked={includeSubcategories}
+              onChange={(e) => setIncludeSubcategories(e.target.checked)}
+              className="rounded border-zinc-300 dark:border-zinc-600 text-emerald-500 focus:ring-emerald-500"
+            />
+            Включая подкатегории
+          </label>
         </div>
       </div>
 
@@ -314,6 +365,101 @@ export function Reports() {
           )}
         </div>
       </div>
+
+      {/* Table: expenses by category */}
+      <div className="p-6 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm dark:shadow-none animate-slide-up" style={{ animationDelay: "0.15s" }}>
+        <div className="flex items-center gap-2 mb-4">
+          <Table2 size={18} className="text-zinc-400" />
+          <h4 className="font-medium text-zinc-900 dark:text-zinc-100">Расходы по категориям — таблица</h4>
+        </div>
+        {loading ? (
+          <div className="h-32 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full border-2 border-zinc-200 dark:border-zinc-700 border-t-emerald-500 animate-spin" />
+          </div>
+        ) : categoryData.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-200 dark:border-zinc-700 text-left text-zinc-500 dark:text-zinc-400">
+                  <th className="pb-3 pr-4 font-medium">Категория</th>
+                  <th className="pb-3 pr-4 font-medium text-right">Сумма</th>
+                  <th className="pb-3 font-medium text-right">% от общих расходов</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categoryData.map((row, i) => (
+                  <tr key={i} className="border-b border-zinc-100 dark:border-zinc-800 last:border-0">
+                    <td className="py-2.5 pr-4 text-zinc-900 dark:text-zinc-100">{row.category_name}</td>
+                    <td className="py-2.5 pr-4 text-right font-medium text-red-500">{formatAmount(row.total)}</td>
+                    <td className="py-2.5 text-right text-zinc-600 dark:text-zinc-400">
+                      {totalExpense > 0 ? ((row.total / totalExpense) * 100).toFixed(1) : 0}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-zinc-200 dark:border-zinc-700 font-semibold text-zinc-900 dark:text-zinc-100">
+                  <td className="pt-3 pr-4">Итого</td>
+                  <td className="pt-3 pr-4 text-right text-red-500">{formatAmount(totalExpense)}</td>
+                  <td className="pt-3 text-right">100%</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ) : (
+          <p className="text-zinc-500 dark:text-zinc-400 text-center py-6">Нет данных за выбранный период</p>
+        )}
+      </div>
+
+      {/* Forecast */}
+      {forecast && (
+        <div className="p-6 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm dark:shadow-none animate-slide-up" style={{ animationDelay: "0.2s" }}>
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles size={18} className="text-amber-500" />
+            <h4 className="font-medium text-zinc-900 dark:text-zinc-100">Прогноз расходов на следующий месяц</h4>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Ожидаемые расходы</p>
+              <p className="text-xl font-bold text-amber-600 dark:text-amber-400">
+                {formatAmount(forecast.overall.predicted_expense)}
+              </p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                диапазон: {formatAmount(forecast.overall.confidence_low)} — {formatAmount(forecast.overall.confidence_high)}
+              </p>
+              <p className="text-xs mt-1">
+                Тренд:{" "}
+                <span className={forecast.overall.trend === "up" ? "text-red-500" : forecast.overall.trend === "down" ? "text-emerald-500" : "text-zinc-500"}>
+                  {forecast.overall.trend === "up" ? "↑ рост" : forecast.overall.trend === "down" ? "↓ снижение" : "→ стабильно"} ({forecast.overall.trend_percent > 0 ? "+" : ""}{forecast.overall.trend_percent.toFixed(0)}%)
+                </span>
+              </p>
+            </div>
+            {forecast.by_category.length > 0 && (
+              <div className="sm:col-span-2">
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-2">По категориям</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-zinc-200 dark:border-zinc-700 text-left text-zinc-500 dark:text-zinc-400">
+                        <th className="pb-2 pr-4 font-medium">Категория</th>
+                        <th className="pb-2 font-medium text-right">Прогноз</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {forecast.by_category.map((c) => (
+                        <tr key={c.category_id} className="border-b border-zinc-100 dark:border-zinc-800">
+                          <td className="py-1.5 pr-4 text-zinc-900 dark:text-zinc-100">{c.category_name}</td>
+                          <td className="py-1.5 text-right font-medium text-amber-600 dark:text-amber-400">{formatAmount(c.predicted_expense)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

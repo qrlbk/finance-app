@@ -16,9 +16,11 @@ interface SummaryCardsProps {
   summary: Summary | null;
   loading?: boolean;
   expenseByCategory?: { category_name: string; total: number }[];
+  /** When multiple currencies, show warning that total is without conversion */
+  currencies?: string[];
 }
 
-export function SummaryCards({ summary, loading, expenseByCategory = [] }: SummaryCardsProps) {
+export function SummaryCards({ summary, loading, expenseByCategory = [], currencies = [] }: SummaryCardsProps) {
   if (loading) {
     return (
       <div className="grid gap-4 lg:grid-cols-3">
@@ -56,6 +58,11 @@ export function SummaryCards({ summary, loading, expenseByCategory = [] }: Summa
             <p className="text-4xl font-bold mb-2">
               {formatAmount(summary.total_balance)}
             </p>
+            {currencies.length > 1 && (
+              <p className="text-sm text-blue-200/90 mb-2" title="Итоги без конвертации. Для корректного баланса используйте одну валюту.">
+                Несколько валют ({currencies.join(", ")})
+              </p>
+            )}
             <div className="flex items-center gap-1 text-sm">
               {savingsRate >= 0 ? (
                 <>

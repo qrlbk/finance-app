@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export interface UserSession {
+  id: number;
+  username: string;
+  display_name: string;
+}
+
 export interface Account {
   id: number;
   name: string;
@@ -14,6 +20,7 @@ export interface Category {
   category_type: string;
   icon: string | null;
   color: string | null;
+  parent_id: number | null;
 }
 
 export interface TransactionWithDetails {
@@ -28,10 +35,22 @@ export interface TransactionWithDetails {
   date: string;
 }
 
+export interface TransferWithDetails {
+  id: number;
+  from_account_id: number;
+  from_account_name: string;
+  to_account_id: number;
+  to_account_name: string;
+  amount: number;
+  date: string;
+  note: string | null;
+}
+
 export interface Summary {
   total_balance: number;
   income_month: number;
   expense_month: number;
+  currencies: string[];
 }
 
 // ML Types
@@ -53,6 +72,21 @@ export interface ModelStatus {
   trained_at: string | null;
   sample_count: number | null;
   accuracy: number | null;
+  transactions_with_categories_count: number | null;
+  transactions_with_note_no_category: number | null;
+}
+
+export interface EmbeddedLlmStatus {
+  downloaded: boolean;
+  download_progress: number | null;
+  registered_in_ollama: boolean;
+  ollama_reachable: boolean;
+  error: string | null;
+}
+
+export interface TestEmbeddedLlmResult {
+  success: boolean;
+  message: string;
 }
 
 export interface Anomaly {
@@ -162,9 +196,17 @@ export interface BudgetAlert {
 // Export/Import Types
 export interface ImportResult {
   transactions_imported: number;
+  duplicates_skipped: number;
   accounts_imported: number;
   categories_imported: number;
   errors: string[];
+  total_parsed?: number;
+}
+
+export interface ImportPreview {
+  headers?: string[] | null;
+  rows?: string[][] | null;
+  transaction_count?: number | null;
 }
 
 // Bank Statement Import Types
@@ -205,21 +247,39 @@ export interface ImportTransaction {
 }
 
 export const api = {
+  // Auth (no session required)
+  register: (username: string, password: string, displayName: string) =>
+    invoke<UserSession>("register", { args: { username, password, displayName } }),
+  login: (username: string, password: string) =>
+    invoke<UserSession>("login", { username, password }),
+  logout: () => invoke<void>("logout"),
+  getCurrentSession: () => invoke<UserSession | null>("get_current_session"),
+  listUsers: () => invoke<UserSession[]>("list_users"),
+
   getAccounts: () => invoke<Account[]>("get_accounts"),
-  createAccount: (input: { name: string; account_type: string; currency?: string }) =>
-    invoke<number>("create_account", { input }),
+  createAccount: (input: {
+    name: string;
+    account_type: string;
+    currency?: string;
+    /** Стартовый капитал — сумма, которая уже есть на счёте (на карте и т.д.) */
+    initial_balance?: number;
+  }) => invoke<number>("create_account", { input }),
   updateAccount: (input: { id: number; name: string; account_type: string; currency?: string }) =>
     invoke("update_account", { input }),
   deleteAccount: (id: number) => invoke("delete_account", { id }),
+  reassignTransactionsToAccount: (from_account_id: number, to_account_id: number) =>
+    invoke("reassign_transactions_to_account", { from_account_id, to_account_id }),
 
   getCategories: () => invoke<Category[]>("get_categories"),
 
   getTransactions: (input?: {
     limit?: number;
+    offset?: number;
     account_id?: number;
     date_from?: string;
     date_to?: string;
     category_id?: number;
+    uncategorized_only?: boolean;
     transaction_type?: string;
     search_note?: string;
   }) => invoke<TransactionWithDetails[]>("get_transactions", { input: input ?? {} }),
@@ -244,7 +304,7 @@ export const api = {
 
   getSummary: () => invoke<Summary>("get_summary"),
 
-  getExpenseByCategory: (input: { year: number; month: number }) =>
+  getExpenseByCategory: (input: { year: number; month: number; include_children?: boolean }) =>
     invoke<{ category_name: string; total: number }[]>("get_expense_by_category", { input }),
   getMonthlyTotals: (input?: { months?: number }) =>
     invoke<{ month: string; income: number; expense: number }[]>("get_monthly_totals", {
@@ -253,6 +313,7 @@ export const api = {
 
   exportBackup: () => invoke<string>("export_backup"),
   restoreBackup: (path: string) => invoke("restore_backup", { path }),
+  resetDatabase: () => invoke("reset_database"),
 
   createTransfer: (input: {
     from_account_id: number;
@@ -261,10 +322,28 @@ export const api = {
     date: string;
     note?: string | null;
   }) => invoke("create_transfer", { input }),
+  getTransfers: (input?: { limit?: number }) =>
+    invoke<TransferWithDetails[]>("get_transfers", { input: input ?? {} }),
 
   // ML methods
-  predictCategory: (note: string, amount?: number, date?: string) =>
-    invoke<CategoryPrediction | null>("predict_category", { note, amount, date }),
+  predictCategory: (
+    note: string,
+    amount?: number,
+    date?: string,
+    confidenceThreshold?: number,
+    options?: { useLlm?: boolean; ollamaUrl?: string; ollamaModel?: string; transactionType?: string; useEmbedded?: boolean }
+  ) =>
+    invoke<CategoryPrediction | null>("predict_category", {
+      note,
+      amount,
+      date,
+      confidence_threshold: confidenceThreshold ?? undefined,
+      use_llm: options?.useLlm ?? undefined,
+      ollama_url: options?.ollamaUrl ?? undefined,
+      ollama_model: options?.ollamaModel ?? undefined,
+      transaction_type: options?.transactionType ?? undefined,
+      use_embedded: options?.useEmbedded ?? undefined,
+    }),
   trainModel: () => invoke<TrainResult>("train_model"),
   getModelStatus: () => invoke<ModelStatus>("get_model_status"),
   getInsights: () => invoke<Insights>("get_insights"),
@@ -329,9 +408,17 @@ export const api = {
     date_to?: string | null;
     include_accounts: boolean;
     include_categories: boolean;
+    account_id?: number | null;
+    category_id?: number | null;
   }) => invoke<string>("export_data", { input }),
-  importData: (input: { path: string; format: string }) =>
-    invoke<ImportResult>("import_data", { input }),
+  importData: (input: {
+    path: string;
+    format: string;
+    default_account_id?: number | null;
+    skip_duplicates?: boolean;
+  }) => invoke<ImportResult>("import_data", { input }),
+  importPreview: (path: string, format: string) =>
+    invoke<ImportPreview>("import_preview", { path, format }),
 
   // Open file with system application
   openFile: (path: string) => invoke("open_file", { path }),
@@ -340,8 +427,46 @@ export const api = {
   getForecastDetails: () => invoke<ForecastDetails>("get_forecast_details"),
 
   // Bank Statement Import
-  parseBankStatement: (path: string) =>
-    invoke<ParsedStatement>("parse_bank_statement", { path }),
+  parseBankStatement: (
+    path: string,
+    options?: { useLlm?: boolean; ollamaUrl?: string; ollamaModel?: string; useEmbedded?: boolean }
+  ) =>
+    invoke<ParsedStatement>("parse_bank_statement", {
+      path,
+      use_llm: options?.useLlm ?? undefined,
+      ollama_url: options?.ollamaUrl ?? undefined,
+      ollama_model: options?.ollamaModel ?? undefined,
+      use_embedded: options?.useEmbedded ?? undefined,
+    }),
+  getEmbeddedLlmStatus: () => invoke<EmbeddedLlmStatus>("get_embedded_llm_status"),
+  /** Проверить/установить Ollama. Возвращает "Ready" или "OpenedDownload". */
+  ensureOllamaInstalled: () =>
+    invoke<"Ready" | "OpenedDownload">("ensure_ollama_installed"),
+  /** Запустить сервер Ollama в фоне (если ещё не запущен). */
+  startOllamaServer: () => invoke<void>("start_ollama_server"),
+  /** Чат с Ollama. options — context (данные пользователя), systemPrompt, useEmbedded, ollamaUrl, ollamaModel. */
+  chatMessage: (
+    message: string,
+    options?: {
+      context?: string;
+      systemPrompt?: string;
+      useEmbedded?: boolean;
+      ollamaUrl?: string;
+      ollamaModel?: string;
+    }
+  ) =>
+    invoke<string>("chat_message", {
+      message,
+      system_prompt: options?.systemPrompt ?? undefined,
+      context: options?.context ?? undefined,
+      use_embedded: options?.useEmbedded ?? undefined,
+      ollama_url: options?.ollamaUrl ?? undefined,
+      ollama_model: options?.ollamaModel ?? undefined,
+    }),
+  downloadAndRegisterEmbeddedModel: () =>
+    invoke<void>("download_and_register_embedded_model"),
+  testEmbeddedLlm: () =>
+    invoke<TestEmbeddedLlmResult>("test_embedded_llm"),
   importBankTransactions: (input: {
     transactions: ImportTransaction[];
     account_id: number;

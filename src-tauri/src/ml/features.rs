@@ -44,11 +44,9 @@ impl AmountBucket {
     }
 }
 
-/// Time-based features
+/// Time-based features (reduced to 3 to avoid redundancy with Naive Bayes independence assumption)
 #[derive(Debug, Clone)]
 pub struct TimeFeatures {
-    pub day_of_week: usize,    // 0-6 (Mon-Sun)
-    pub day_of_month: usize,   // 1-31
     pub is_weekend: bool,
     pub is_month_start: bool,  // 1-5
     pub is_month_end: bool,    // 26-31
@@ -57,39 +55,25 @@ pub struct TimeFeatures {
 impl TimeFeatures {
     pub fn from_date(date_str: &str) -> Option<Self> {
         let date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok()?;
-        let day_of_week = date.weekday().num_days_from_monday() as usize;
         let day_of_month = date.day() as usize;
-        
         Some(TimeFeatures {
-            day_of_week,
-            day_of_month,
             is_weekend: matches!(date.weekday(), Weekday::Sat | Weekday::Sun),
             is_month_start: day_of_month <= 5,
             is_month_end: day_of_month >= 26,
         })
     }
 
-    /// Convert to feature vector
+    /// Convert to feature vector (3 components only)
     pub fn to_features(&self) -> Vec<f64> {
-        let mut features = vec![0.0; Self::feature_count()];
-        
-        // One-hot encode day of week (7 features)
-        features[self.day_of_week] = 1.0;
-        
-        // Is weekend (1 feature)
-        features[7] = if self.is_weekend { 1.0 } else { 0.0 };
-        
-        // Is month start (1 feature)
-        features[8] = if self.is_month_start { 1.0 } else { 0.0 };
-        
-        // Is month end (1 feature)
-        features[9] = if self.is_month_end { 1.0 } else { 0.0 };
-        
-        features
+        vec![
+            if self.is_weekend { 1.0 } else { 0.0 },
+            if self.is_month_start { 1.0 } else { 0.0 },
+            if self.is_month_end { 1.0 } else { 0.0 },
+        ]
     }
 
     pub fn feature_count() -> usize {
-        10 // 7 day_of_week + 1 is_weekend + 1 is_month_start + 1 is_month_end
+        3
     }
 }
 

@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
+const DEFAULT_MIN_DF: usize = 2;
+const DEFAULT_MAX_FEATURES: usize = 10_000;
+
 /// TF-IDF Vectorizer for converting text to numerical features
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TfIdfVectorizer {
@@ -27,38 +30,44 @@ impl TfIdfVectorizer {
         }
     }
 
-    /// Fit the vectorizer on a corpus of tokenized documents
+    /// Fit the vectorizer on a corpus of tokenized documents.
+    /// Words appearing in fewer than min_df documents are dropped.
+    /// At most max_features words (by document frequency, descending) are kept.
     pub fn fit(&mut self, documents: &[Vec<String>]) {
         let n_docs = documents.len() as f64;
-        
-        // Build vocabulary
+
         let mut word_doc_count: HashMap<String, usize> = HashMap::new();
-        
         for doc in documents {
-            // Count unique words per document
             let unique_words: std::collections::HashSet<&String> = doc.iter().collect();
             for word in unique_words {
                 *word_doc_count.entry(word.clone()).or_insert(0) += 1;
             }
         }
-        
-        // Create vocabulary (sorted for consistency)
-        let mut words: Vec<_> = word_doc_count.keys().cloned().collect();
-        words.sort();
-        
+
+        // Keep only words with doc_count >= min_df
+        let mut words: Vec<(String, usize)> = word_doc_count
+            .into_iter()
+            .filter(|(_, count)| *count >= DEFAULT_MIN_DF)
+            .collect();
+        // Sort by document count descending, then by word for stability; take top max_features
+        words.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        if words.len() > DEFAULT_MAX_FEATURES {
+            words.truncate(DEFAULT_MAX_FEATURES);
+        }
+        let count_map: HashMap<String, usize> = words.iter().map(|(w, c)| (w.clone(), *c)).collect();
+        words.sort_by(|a, b| a.0.cmp(&b.0)); // final sort by word for consistent indices
+
         self.vocabulary.clear();
-        for (idx, word) in words.iter().enumerate() {
+        for (idx, (word, _)) in words.iter().enumerate() {
             self.vocabulary.insert(word.clone(), idx);
         }
-        
-        // Calculate IDF for each word
-        // IDF = log((n_docs + 1) / (doc_count + 1)) + 1 (smoothed)
+
         self.idf = vec![0.0; self.vocabulary.len()];
         for (word, &idx) in &self.vocabulary {
-            let doc_count = word_doc_count.get(word).copied().unwrap_or(0) as f64;
+            let doc_count = count_map.get(word).copied().unwrap_or(0) as f64;
             self.idf[idx] = ((n_docs + 1.0) / (doc_count + 1.0)).ln() + 1.0;
         }
-        
+
         self.fitted = true;
     }
 
@@ -183,12 +192,12 @@ mod tests {
 
     #[test]
     fn test_idf_weighting() {
-        // Word appearing in all docs should have lower IDF
-        // Word appearing in one doc should have higher IDF
+        // Word appearing in more docs has lower IDF (min_df=2 so each word in at least 2 docs)
         let docs = vec![
             vec!["common".to_string(), "unique1".to_string()],
+            vec!["common".to_string(), "unique1".to_string()],
             vec!["common".to_string(), "unique2".to_string()],
-            vec!["common".to_string(), "unique3".to_string()],
+            vec!["common".to_string(), "unique2".to_string()],
         ];
 
         let mut vectorizer = TfIdfVectorizer::new();
@@ -196,8 +205,6 @@ mod tests {
 
         let common_idx = *vectorizer.vocabulary().get("common").unwrap();
         let unique_idx = *vectorizer.vocabulary().get("unique1").unwrap();
-        
-        // IDF for common word should be lower than unique word
         assert!(vectorizer.idf_weights()[common_idx] < vectorizer.idf_weights()[unique_idx]);
     }
 
@@ -205,16 +212,15 @@ mod tests {
     fn test_l2_normalization() {
         let docs = vec![
             vec!["test".to_string(), "document".to_string()],
+            vec!["test".to_string(), "document".to_string()],
         ];
 
         let mut vectorizer = TfIdfVectorizer::new();
         vectorizer.fit(&docs);
 
         let vec = vectorizer.transform(&["test".to_string(), "document".to_string()]);
-        
-        // L2 norm should be 1.0 (or close to it due to floating point)
         let norm: f64 = vec.iter().map(|x| x * x).sum::<f64>().sqrt();
-        assert!((norm - 1.0).abs() < 0.0001 || norm == 0.0);
+        assert!((norm - 1.0).abs() < 0.0001);
     }
 
     #[test]

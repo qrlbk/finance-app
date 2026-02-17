@@ -1,26 +1,57 @@
 import { useState, useEffect } from "react";
-import { Moon, Sun, Download, Upload, Brain, RefreshCw, CheckCircle, XCircle, PiggyBank, Plus, Trash2, FileDown, FileUp, FileJson, FileSpreadsheet, ExternalLink, FileText } from "lucide-react";
+import { Brain, RefreshCw, CheckCircle, XCircle, PiggyBank, Plus, Trash2, FileDown, FileUp, FileJson, FileSpreadsheet, ExternalLink, FileText } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getTheme, setTheme, initTheme, type Theme } from "../stores/themeStore";
-import { api, type ModelStatus, type Budget, type Category, type ImportResult } from "../lib/api";
+import { api, type ModelStatus, type Budget, type Category, type ImportResult, type Account, type EmbeddedLlmStatus } from "../lib/api";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { useToast } from "../components/ui/Toast";
+import { SettingsTheme } from "./settings/SettingsTheme";
+import { SettingsBackup } from "./settings/SettingsBackup";
 
 export function Settings() {
   const { showToast } = useToast();
   const [theme, setThemeState] = useState<Theme>(getTheme());
   const [backupPath, setBackupPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [backupExporting, setBackupExporting] = useState(false);
   const [restoreConfirmPath, setRestoreConfirmPath] = useState<string | null>(null);
+  const [restoreInProgress, setRestoreInProgress] = useState(false);
+  const [resetDbConfirm, setResetDbConfirm] = useState(false);
+  const [resetInProgress, setResetInProgress] = useState(false);
 
   // ML State
+  const ML_THRESHOLD_KEY = "ml_confidence_threshold";
+  const ML_THRESHOLD_DEFAULT = 0.3;
+  const LLM_ENABLED_KEY = "llm_enabled";
+  const LLM_USE_EMBEDDED_KEY = "llm_use_embedded";
+  const OLLAMA_URL_KEY = "ollama_url";
+  const OLLAMA_MODEL_KEY = "ollama_model";
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
   const [mlLoading, setMlLoading] = useState(true);
   const [training, setTraining] = useState(false);
+  const [confidenceThreshold, setConfidenceThreshold] = useState(() => {
+    try {
+      const v = localStorage.getItem(ML_THRESHOLD_KEY);
+      if (v != null) {
+        const n = parseFloat(v);
+        if (!Number.isNaN(n) && n >= 0.2 && n <= 0.9) return n;
+      }
+    } catch {}
+    return ML_THRESHOLD_DEFAULT;
+  });
+  const [llmEnabled, setLlmEnabled] = useState(() => localStorage.getItem(LLM_ENABLED_KEY) === "true");
+  const [useEmbeddedLlm, setUseEmbeddedLlm] = useState(() => localStorage.getItem(LLM_USE_EMBEDDED_KEY) === "true");
+  const [ollamaUrl, setOllamaUrl] = useState(() => localStorage.getItem(OLLAMA_URL_KEY) ?? "http://127.0.0.1:11434");
+  const [ollamaModel, setOllamaModel] = useState(() => localStorage.getItem(OLLAMA_MODEL_KEY) ?? "llama3.2");
+  const [embeddedLlmStatus, setEmbeddedLlmStatus] = useState<EmbeddedLlmStatus | null>(null);
+  const [embeddedDownloading, setEmbeddedDownloading] = useState(false);
+  const [embeddedTestingLlm, setEmbeddedTestingLlm] = useState(false);
 
   // Budget State
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [showBudgetForm, setShowBudgetForm] = useState(false);
   const [budgetForm, setBudgetForm] = useState({
     category_id: 0,
@@ -37,22 +68,83 @@ export function Settings() {
     date_to: "",
     include_accounts: true,
     include_categories: true,
+    account_id: 0,
+    category_id: 0,
   });
   const [exporting, setExporting] = useState(false);
   const [exportPath, setExportPath] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importDefaultAccountId, setImportDefaultAccountId] = useState<number | null>(null);
+  const [importSkipDuplicates, setImportSkipDuplicates] = useState(true);
+  const [showTrainPromptAfterImport, setShowTrainPromptAfterImport] = useState(false);
+  const [trainingAfterImport, setTrainingAfterImport] = useState(false);
+
+  const loadEmbeddedLlmStatus = async () => {
+    try {
+      const s = await api.getEmbeddedLlmStatus();
+      setEmbeddedLlmStatus(s);
+      if (s.downloaded && s.download_progress == null) setEmbeddedDownloading(false);
+    } catch {
+      setEmbeddedLlmStatus(null);
+    }
+  };
+
+  const handleDownloadEmbeddedModel = async () => {
+    setEmbeddedDownloading(true);
+    try {
+      const ollamaResult = await api.ensureOllamaInstalled();
+      if (ollamaResult === "OpenedDownload") {
+        showToast(
+          "Открыта страница загрузки Ollama. Установите Ollama, затем снова нажмите «Скачать модель».",
+          "info"
+        );
+        setEmbeddedDownloading(false);
+        return;
+      }
+      await api.downloadAndRegisterEmbeddedModel();
+      showToast("Модель скачана и зарегистрирована", "success");
+      await loadEmbeddedLlmStatus();
+    } catch (e) {
+      showToast(String(e) || "Ошибка загрузки", "error");
+    } finally {
+      setEmbeddedDownloading(false);
+    }
+  };
+
+  const handleTestEmbeddedLlm = async () => {
+    setEmbeddedTestingLlm(true);
+    try {
+      const result = await api.testEmbeddedLlm();
+      showToast(result.message, result.success ? "success" : "error");
+      await loadEmbeddedLlmStatus();
+    } catch (e) {
+      showToast(String(e) || "Ошибка проверки", "error");
+    } finally {
+      setEmbeddedTestingLlm(false);
+    }
+  };
 
   useEffect(() => {
     initTheme();
     loadModelStatus();
     loadBudgets();
+    loadEmbeddedLlmStatus();
   }, []);
+
+  useEffect(() => {
+    if (embeddedDownloading || (embeddedLlmStatus?.download_progress != null)) {
+      const id = setInterval(loadEmbeddedLlmStatus, 800);
+      return () => clearInterval(id);
+    }
+  }, [embeddedDownloading, embeddedLlmStatus?.download_progress]);
 
   const loadBudgets = async () => {
     try {
-      const [b, c] = await Promise.all([api.getBudgets(), api.getCategories()]);
+      const [b, c, a] = await Promise.all([api.getBudgets(), api.getCategories(), api.getAccounts()]);
       setBudgets(b);
       setCategories(c.filter(cat => cat.category_type === "expense"));
+      setAllCategories(c);
+      setAccounts(a);
       if (c.length > 0 && budgetForm.category_id === 0) {
         const expenseCats = c.filter(cat => cat.category_type === "expense");
         if (expenseCats.length > 0) {
@@ -67,7 +159,14 @@ export function Settings() {
   const handleCreateBudget = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(budgetForm.amount);
-    if (isNaN(amount) || amount <= 0) return;
+    if (isNaN(amount) || amount <= 0) {
+      showToast("Введите положительную сумму", "error");
+      return;
+    }
+    if (!budgetForm.category_id || !categories.some((c) => c.id === budgetForm.category_id)) {
+      showToast("Выберите категорию", "error");
+      return;
+    }
     try {
       await api.createBudget({
         category_id: budgetForm.category_id,
@@ -107,6 +206,8 @@ export function Settings() {
         date_to: exportForm.date_to || null,
         include_accounts: exportForm.include_accounts,
         include_categories: exportForm.include_categories,
+        account_id: exportForm.account_id || null,
+        category_id: exportForm.category_id || null,
       });
       setExportPath(path);
       showToast("Данные экспортированы", "success");
@@ -126,13 +227,22 @@ export function Settings() {
         multiple: false,
         directory: false,
         filters: [
-          { name: "CSV/JSON", extensions: ["csv", "json"] },
+          { name: "CSV", extensions: ["csv"] },
+          { name: "JSON", extensions: ["json"] },
+          { name: "Excel", extensions: ["xlsx"] },
         ],
       });
-      if (selected && typeof selected === "string") {
-        const format = selected.toLowerCase().endsWith(".json") ? "json" : "csv";
-        const result = await api.importData({ path: selected, format });
+      if (selected != null && typeof selected === "string") {
+        const path = selected.startsWith("file://") ? decodeURIComponent(selected.slice(7)) : selected;
+        const format = path.toLowerCase().endsWith(".json") ? "json" : path.toLowerCase().endsWith(".xlsx") ? "xlsx" : "csv";
+        const result = await api.importData({
+          path,
+          format,
+          default_account_id: importDefaultAccountId ?? undefined,
+          skip_duplicates: importSkipDuplicates,
+        });
         setImportResult(result);
+        setShowTrainPromptAfterImport(result.transactions_imported > 0);
         if (result.transactions_imported > 0) {
           showToast(`Импортировано: ${result.transactions_imported} транзакций`, "success");
         }
@@ -141,8 +251,9 @@ export function Settings() {
         }
       }
     } catch (e) {
-      setError(String(e));
-      showToast("Ошибка импорта", "error");
+      const msg = getErrorMessage(e);
+      setError(msg);
+      showToast(msg, "error");
     }
   };
 
@@ -182,23 +293,42 @@ export function Settings() {
     setThemeState(t);
   };
 
+  const getErrorMessage = (e: unknown): string => {
+    if (e instanceof Error) return e.message;
+    if (typeof e === "string") return e;
+    if (e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string")
+      return (e as { message: string }).message;
+    return "Неизвестная ошибка";
+  };
+
   const handleBackupExport = async () => {
     try {
       setError(null);
+      setBackupExporting(true);
       const path = await api.exportBackup();
       setBackupPath(path);
       showToast("Резервная копия создана", "success");
     } catch (e) {
-      setError(String(e));
-      showToast("Ошибка при создании копии", "error");
+      const msg = getErrorMessage(e);
+      setError(msg);
+      showToast(msg, "error");
+    } finally {
+      setBackupExporting(false);
     }
   };
 
-  const handleOpenFile = async (path: string) => {
+  /** Открыть папку с файлом в проводнике (для .db нет приложения по умолчанию) */
+  const openContainingFolder = (filePath: string) => {
+    const i = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+    const dir = i > 0 ? filePath.slice(0, i) : filePath;
+    handleOpenPath(dir);
+  };
+
+  const handleOpenPath = async (path: string) => {
     try {
       await api.openFile(path);
     } catch (e) {
-      showToast(String(e), "error");
+      showToast(getErrorMessage(e), "error");
     }
   };
 
@@ -208,13 +338,16 @@ export function Settings() {
       const selected = await open({
         multiple: false,
         directory: false,
-        filters: [{ name: "SQLite", extensions: ["db"] }],
+        filters: [{ name: "База SQLite", extensions: ["db"] }],
       });
-      if (selected && typeof selected === "string") {
-        setRestoreConfirmPath(selected);
+      if (selected != null && typeof selected === "string") {
+        const path = selected.startsWith("file://") ? decodeURIComponent(selected.slice(7)) : selected;
+        setRestoreConfirmPath(path);
       }
     } catch (e) {
-      setError(String(e));
+      const msg = getErrorMessage(e);
+      setError(msg);
+      showToast(msg, "error");
     }
   };
 
@@ -222,85 +355,50 @@ export function Settings() {
     if (!restoreConfirmPath) return;
     try {
       setError(null);
+      setRestoreInProgress(true);
       await api.restoreBackup(restoreConfirmPath);
       setRestoreConfirmPath(null);
+      showToast("Данные восстановлены. Перезагрузка…", "success");
       window.location.reload();
     } catch (e) {
-      setError(String(e));
+      const msg = getErrorMessage(e);
+      setError(msg);
+      showToast(msg, "error");
+    } finally {
+      setRestoreInProgress(false);
+    }
+  };
+
+  const handleResetDbConfirm = async () => {
+    try {
+      setError(null);
+      setResetInProgress(true);
+      await api.resetDatabase();
+      setResetDbConfirm(false);
+      showToast("База данных очищена. Перезагрузка…", "success");
+      window.location.reload();
+    } catch (e) {
+      const msg = getErrorMessage(e);
+      setError(msg);
+      showToast(msg, "error");
+    } finally {
+      setResetInProgress(false);
     }
   };
 
   return (
     <div className="space-y-8 max-w-xl">
-      <div>
-        <h3 className="text-lg font-medium mb-4">Тема</h3>
-        <div className="flex gap-4">
-          <button
-            onClick={() => handleThemeChange("dark")}
-            className={`flex items-center gap-2 px-4 py-3 rounded-xl border transition-colors ${
-              theme === "dark"
-                ? "bg-zinc-700 dark:bg-zinc-700 border-zinc-600 text-white"
-                : "bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600"
-            }`}
-          >
-            <Moon size={20} />
-            Тёмная
-          </button>
-          <button
-            onClick={() => handleThemeChange("light")}
-            className={`flex items-center gap-2 px-4 py-3 rounded-xl border transition-colors ${
-              theme === "light"
-                ? "bg-zinc-700 dark:bg-zinc-700 border-zinc-600 text-white"
-                : "bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600"
-            }`}
-          >
-            <Sun size={20} />
-            Светлая
-          </button>
-        </div>
-      </div>
+      <SettingsTheme theme={theme} onThemeChange={handleThemeChange} />
 
-      <div>
-        <h3 className="text-lg font-medium mb-4">Резервная копия</h3>
-        <p className="text-sm text-zinc-400 mb-4">
-          Создаёт копию базы данных в папке приложения. Используйте для бэкапа перед обновлениями.
-        </p>
-        {error && (
-          <div className="p-4 rounded-lg bg-red-500/10 text-red-500 border border-red-500/20 mb-4">
-            {error}
-          </div>
-        )}
-        {backupPath && (
-          <div className="p-4 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-4">
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-sm break-all">Копия сохранена: {backupPath}</span>
-              <button
-                onClick={() => handleOpenFile(backupPath)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition text-sm shrink-0"
-              >
-                <ExternalLink size={14} />
-                Открыть
-              </button>
-            </div>
-          </div>
-        )}
-        <div className="flex gap-2">
-          <button
-            onClick={handleBackupExport}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
-          >
-            <Download size={18} />
-            Создать резервную копию
-          </button>
-          <button
-            onClick={handleRestoreClick}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-600 text-white hover:bg-zinc-500 transition-colors"
-          >
-            <Upload size={18} />
-            Восстановить из копии
-          </button>
-        </div>
-      </div>
+      <SettingsBackup
+        error={error}
+        backupPath={backupPath}
+        backupExporting={backupExporting}
+        onBackupExport={handleBackupExport}
+        onRestoreClick={handleRestoreClick}
+        onResetClick={() => setResetDbConfirm(true)}
+        openContainingFolder={openContainingFolder}
+      />
 
       {/* Export/Import Section */}
       <div>
@@ -309,7 +407,7 @@ export function Settings() {
           Экспорт и импорт данных
         </h3>
         <p className="text-sm text-zinc-400 mb-4">
-          Экспортируйте транзакции в Excel, CSV или JSON. Файл можно сразу открыть после экспорта.
+          Экспорт: выберите формат (Excel, CSV, JSON) и при необходимости фильтры — файл сохранится и можно открыть папку. Импорт: нажмите «Импорт», выберите файл CSV или JSON (лучше всего — ранее экспортированный из этого приложения).
         </p>
 
         {exportPath && (
@@ -317,15 +415,42 @@ export function Settings() {
             <div className="flex items-center justify-between gap-4">
               <span className="text-sm break-all">Файл сохранён: {exportPath}</span>
               <button
-                onClick={() => handleOpenFile(exportPath)}
+                onClick={() => openContainingFolder(exportPath)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition text-sm shrink-0"
               >
                 <ExternalLink size={14} />
-                Открыть
+                Открыть папку
               </button>
             </div>
           </div>
         )}
+
+        {/* Настройки импорта */}
+        <div className="flex flex-wrap items-center gap-4 mb-4 p-3 rounded-lg bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700">
+          <span className="text-sm text-zinc-500 dark:text-zinc-400">При импорте:</span>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-zinc-600 dark:text-zinc-300">Счёт по умолчанию</label>
+            <select
+              value={importDefaultAccountId ?? ""}
+              onChange={(e) => setImportDefaultAccountId(e.target.value ? Number(e.target.value) : null)}
+              className="px-3 py-1.5 rounded-lg bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white text-sm"
+            >
+              <option value="">Не выбран</option>
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>{acc.name}</option>
+              ))}
+            </select>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={importSkipDuplicates}
+              onChange={(e) => setImportSkipDuplicates(e.target.checked)}
+              className="w-4 h-4 rounded"
+            />
+            Пропускать дубликаты
+          </label>
+        </div>
 
         {importResult && (
           <div className={`p-4 rounded-lg border mb-4 ${
@@ -334,6 +459,12 @@ export function Settings() {
               : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
           }`}>
             <p>Импортировано транзакций: {importResult.transactions_imported}</p>
+            {(importResult.duplicates_skipped ?? 0) > 0 && (
+              <p className="text-sm mt-1">Пропущено дубликатов: {importResult.duplicates_skipped}</p>
+            )}
+            {(importResult.total_parsed ?? 0) > 0 && (
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Обработано строк: {importResult.total_parsed}</p>
+            )}
             {importResult.errors.length > 0 && (
               <details className="mt-2">
                 <summary className="cursor-pointer text-sm">Ошибки ({importResult.errors.length})</summary>
@@ -347,6 +478,40 @@ export function Settings() {
                 </ul>
               </details>
             )}
+          </div>
+        )}
+
+        {showTrainPromptAfterImport && importResult && importResult.transactions_imported > 0 && (
+          <div className="p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 mb-4">
+            <p className="text-zinc-700 dark:text-zinc-300 mb-3">Обучить модель по новым данным?</p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    setTrainingAfterImport(true);
+                    const res = await api.trainModel();
+                    showToast(res.message || "Модель обучена", res.success ? "success" : "info");
+                    setShowTrainPromptAfterImport(false);
+                  } catch {
+                    showToast("Ошибка обучения модели", "error");
+                  } finally {
+                    setTrainingAfterImport(false);
+                  }
+                }}
+                disabled={trainingAfterImport}
+                className="px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50"
+              >
+                {trainingAfterImport ? "Обучение…" : "Обучить"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowTrainPromptAfterImport(false)}
+                className="px-4 py-2 rounded-lg bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-600"
+              >
+                Позже
+              </button>
+            </div>
           </div>
         )}
 
@@ -395,6 +560,32 @@ export function Settings() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Счёт (все)</label>
+                <select
+                  value={exportForm.account_id}
+                  onChange={(e) => setExportForm(f => ({ ...f, account_id: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white text-sm"
+                >
+                  <option value={0}>Все счета</option>
+                  {accounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>{acc.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Категория (все)</label>
+                <select
+                  value={exportForm.category_id}
+                  onChange={(e) => setExportForm(f => ({ ...f, category_id: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white text-sm"
+                >
+                  <option value={0}>Все категории</option>
+                  {allCategories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="block text-xs text-zinc-400 mb-1">Дата от (опц.)</label>
                 <input
@@ -531,7 +722,33 @@ export function Settings() {
                 )}
               </div>
 
-              <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700">
+              <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700 space-y-2">
+                <div>
+                  <label className="text-xs text-zinc-400 block mb-1">Порог уверенности</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min={0.2}
+                      max={0.9}
+                      step={0.05}
+                      value={confidenceThreshold}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        setConfidenceThreshold(v);
+                        try {
+                          localStorage.setItem(ML_THRESHOLD_KEY, String(v));
+                        } catch {}
+                      }}
+                      className="flex-1 h-2 rounded-lg appearance-none bg-zinc-200 dark:bg-zinc-600 accent-purple-500"
+                    />
+                    <span className="text-sm text-zinc-600 dark:text-zinc-300 w-10">
+                      {Math.round(confidenceThreshold * 100)}%
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-1">
+                    Чем выше — тем реже показываются подсказки, но они надёжнее
+                  </p>
+                </div>
                 <button
                   onClick={handleTrainModel}
                   disabled={training}
@@ -547,10 +764,147 @@ export function Settings() {
                 <p className="text-xs text-zinc-400 mt-2">
                   Требуется минимум 20 транзакций с заполненными категориями и заметками
                 </p>
+                {modelStatus.transactions_with_categories_count != null &&
+                  modelStatus.transactions_with_categories_count < 20 &&
+                  (modelStatus.transactions_with_note_no_category ?? 0) > 0 && (
+                    <p className="text-sm text-amber-600 dark:text-amber-400 mt-2">
+                      У вас {modelStatus.transactions_with_note_no_category} транзакций с описанием без категории. Назначьте категории хотя бы 20 из них в разделе «Транзакции», затем обучите модель.
+                    </p>
+                  )}
+                {modelStatus.trained &&
+                  modelStatus.sample_count != null &&
+                  modelStatus.transactions_with_categories_count != null &&
+                  modelStatus.transactions_with_categories_count - modelStatus.sample_count > 50 && (
+                    <p className="text-sm text-amber-600 dark:text-amber-400 mt-2">
+                      Добавлено много новых транзакций. Рекомендуем переобучить модель для лучших предсказаний.
+                    </p>
+                  )}
               </div>
             </>
           ) : (
             <div className="text-zinc-400">Не удалось загрузить статус модели</div>
+          )}
+        </div>
+
+        {/* LLM — подсказки категорий: встроенная модель или Ollama вручную */}
+        <div className="mt-6 p-4 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-4">
+          <h4 className="font-medium text-zinc-800 dark:text-zinc-200">Подсказки категорий (LLM)</h4>
+          <p className="text-sm text-zinc-400">
+            Поставьте галочку, выберите «Встроенная модель» и нажмите «Скачать модель» — Ollama установится автоматически (если ещё не установлен), затем скачается и настроится модель (~390 МБ).
+          </p>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={llmEnabled}
+              onChange={(e) => {
+                const v = e.target.checked;
+                setLlmEnabled(v);
+                localStorage.setItem(LLM_ENABLED_KEY, v ? "true" : "false");
+              }}
+              className="rounded border-zinc-300 dark:border-zinc-600 text-purple-600 focus:ring-purple-500"
+            />
+            <span className="text-sm text-zinc-700 dark:text-zinc-300">Использовать LLM для подсказки категорий</span>
+          </label>
+          {llmEnabled && (
+            <>
+              <div className="flex flex-col gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="llm_source"
+                    checked={useEmbeddedLlm}
+                    onChange={() => {
+                      setUseEmbeddedLlm(true);
+                      localStorage.setItem(LLM_USE_EMBEDDED_KEY, "true");
+                    }}
+                    className="text-purple-600 focus:ring-purple-500"
+                  />
+                  <span className="text-sm text-zinc-700 dark:text-zinc-300">Встроенная модель</span>
+                </label>
+                {useEmbeddedLlm && embeddedLlmStatus && (
+                  <div className="pl-6 text-sm space-y-2">
+                    {embeddedLlmStatus.error && (
+                      <p className="text-amber-600 dark:text-amber-400">{embeddedLlmStatus.error}</p>
+                    )}
+                    {embeddedLlmStatus.downloaded && embeddedLlmStatus.registered_in_ollama && embeddedLlmStatus.ollama_reachable && !embeddedLlmStatus.error && (
+                      <p className="text-emerald-600 dark:text-emerald-400">Модель готова к работе.</p>
+                    )}
+                    {embeddedLlmStatus.download_progress != null && (
+                      <p className="text-zinc-500">Скачивание: {embeddedLlmStatus.download_progress}%</p>
+                    )}
+                    {!embeddedLlmStatus.downloaded && (
+                      <p className="text-zinc-500">Нажмите «Скачать модель» — Ollama установится при необходимости, затем загрузится модель (~390 МБ). Запустите Ollama перед использованием.</p>
+                    )}
+                    {embeddedLlmStatus.downloaded && !embeddedLlmStatus.ollama_reachable && !embeddedLlmStatus.error && (
+                      <p className="text-zinc-500">Модель скачана. Запустите Ollama и нажмите «Проверить».</p>
+                    )}
+                    {(!embeddedLlmStatus.downloaded || !embeddedLlmStatus.registered_in_ollama) && (
+                      <button
+                        type="button"
+                        onClick={handleDownloadEmbeddedModel}
+                        disabled={embeddedDownloading}
+                        className="px-3 py-1.5 rounded-lg bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-50"
+                      >
+                        {embeddedDownloading ? "Скачивание…" : "Скачать модель"}
+                      </button>
+                    )}
+                    {(embeddedLlmStatus.downloaded && embeddedLlmStatus.registered_in_ollama) && (
+                      <button
+                        type="button"
+                        onClick={handleTestEmbeddedLlm}
+                        disabled={embeddedTestingLlm}
+                        className="ml-2 px-3 py-1.5 rounded-lg bg-zinc-600 text-white text-sm hover:bg-zinc-500 disabled:opacity-50"
+                      >
+                        {embeddedTestingLlm ? "Проверка…" : "Проверить"}
+                      </button>
+                    )}
+                  </div>
+                )}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="llm_source"
+                    checked={!useEmbeddedLlm}
+                    onChange={() => {
+                      setUseEmbeddedLlm(false);
+                      localStorage.setItem(LLM_USE_EMBEDDED_KEY, "false");
+                    }}
+                    className="text-purple-600 focus:ring-purple-500"
+                  />
+                  <span className="text-sm text-zinc-700 dark:text-zinc-300">Ollama вручную (URL и модель)</span>
+                </label>
+                {!useEmbeddedLlm && (
+                  <div className="pl-6 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="text-xs text-zinc-400 block mb-1">URL Ollama</label>
+                      <input
+                        type="text"
+                        value={ollamaUrl}
+                        onChange={(e) => {
+                          setOllamaUrl(e.target.value);
+                          localStorage.setItem(OLLAMA_URL_KEY, e.target.value);
+                        }}
+                        placeholder="http://127.0.0.1:11434"
+                        className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-zinc-400 block mb-1">Модель</label>
+                      <input
+                        type="text"
+                        value={ollamaModel}
+                        onChange={(e) => {
+                          setOllamaModel(e.target.value);
+                          localStorage.setItem(OLLAMA_MODEL_KEY, e.target.value);
+                        }}
+                        placeholder="llama3.2"
+                        className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -682,23 +1036,44 @@ export function Settings() {
           </form>
         ) : (
           <button
+            type="button"
             onClick={() => setShowBudgetForm(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
+            disabled={categories.length === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition disabled:opacity-50 disabled:pointer-events-none"
           >
             <Plus size={18} />
             Добавить бюджет
           </button>
+        )}
+        {categories.length === 0 && (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-2">
+            Сначала добавьте расходные категории в разделе «Категории».
+          </p>
         )}
       </div>
 
       <ConfirmDialog
         open={restoreConfirmPath !== null}
         title="Восстановить из копии?"
-        message="Текущие данные будут заменены. Продолжить?"
+        message="Убедитесь, что бэкап создан этим приложением. Иначе данные могут не открыться. Текущие данные будут заменены. Продолжить?"
         confirmLabel="Восстановить"
         variant="danger"
+        loading={restoreInProgress}
+        loadingConfirmLabel="Восстановление…"
         onConfirm={handleRestoreConfirm}
-        onCancel={() => setRestoreConfirmPath(null)}
+        onCancel={() => !restoreInProgress && setRestoreConfirmPath(null)}
+      />
+
+      <ConfirmDialog
+        open={resetDbConfirm}
+        title="Сбросить базу данных?"
+        message="Будут удалены все счета, транзакции, категории, бюджеты и правила текущего пользователя. Останутся только категории по умолчанию. Это действие необратимо."
+        confirmLabel="Сбросить"
+        variant="danger"
+        loading={resetInProgress}
+        loadingConfirmLabel="Сброс…"
+        onConfirm={handleResetDbConfirm}
+        onCancel={() => !resetInProgress && setResetDbConfirm(false)}
       />
 
       <ConfirmDialog

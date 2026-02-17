@@ -13,13 +13,10 @@ src-tauri/target/
 *.swo
 .DS_Store
 
-# Environment and secrets
+# Environment
 .env
 .env.local
 .env.*.local
-.env.production
-*.pem
-*.key
 
 # Logs
 *.log
@@ -27,6 +24,13 @@ npm-debug.log*
 
 # Test coverage
 coverage/
+
+# Playwright
+playwright-report/
+test-results/
+
+# Local clone of downloads repo (used for uploading license etc.)
+finance-app-downloads-repo/
 
 # Tauri
 src-tauri/target/

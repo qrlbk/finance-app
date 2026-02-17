@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Тема по классу .dark на html (Тёмная / Светлая / Системная в настройках) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --color-income: #22c55e;
   --color-expense: #ef4444;

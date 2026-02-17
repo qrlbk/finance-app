@@ -132,7 +132,7 @@ finance-app/
 │   │   └── ui/             # Переиспользуемые UI элементы
 │   ├── pages/              # Страницы приложения
 │   ├── hooks/              # React hooks
-│   ├── stores/             # Zustand stores
+│   ├── stores/             # Тема (themeStore.ts, localStorage), остальное — локальный useState в компонентах
 │   ├── lib/                # Утилиты и API клиент
 │   └── test/               # Тестовая конфигурация
 ├── src-tauri/              # Backend (Rust + Tauri)
@@ -288,5 +288,3 @@ MIT License
 ## Автор
 
 Kuralbek Adilet
-
-**Поддержка:** kuralbekadilet475@gmail.com

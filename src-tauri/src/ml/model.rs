@@ -37,8 +37,8 @@ pub struct CategoryModel {
 }
 
 impl CategoryModel {
-    /// Current model version
-    pub const CURRENT_VERSION: u32 = 2;
+    /// Current model version (bumped when feature layout or tokenization changes; old models require retrain)
+    pub const CURRENT_VERSION: u32 = 3;
 
     /// Create a new model from trained components
     pub fn new(
@@ -95,7 +95,7 @@ impl CategoryModel {
     /// Load model from JSON file
     pub fn load(path: &Path) -> Result<Self, String> {
         if !path.exists() {
-            return Err("Model file not found".to_string());
+            return Err("Файл модели не найден".to_string());
         }
 
         let json = fs::read_to_string(path)
@@ -175,12 +175,14 @@ impl CategoryModel {
     }
 
     /// Get model status info
-    pub fn status(&self) -> ModelStatus {
+    pub fn status(&self, transactions_with_categories_count: Option<usize>) -> ModelStatus {
         ModelStatus {
             trained: true,
             trained_at: Some(self.trained_at.clone()),
             sample_count: Some(self.sample_count),
             accuracy: self.accuracy,
+            transactions_with_categories_count,
+            transactions_with_note_no_category: None,
         }
     }
 }
@@ -192,6 +194,10 @@ pub struct ModelStatus {
     pub trained_at: Option<String>,
     pub sample_count: Option<usize>,
     pub accuracy: Option<f64>,
+    /// Total transactions with category and note (for retrain hint)
+    pub transactions_with_categories_count: Option<usize>,
+    /// Transactions with note but no category (hint to assign categories)
+    pub transactions_with_note_no_category: Option<usize>,
 }
 
 impl Default for ModelStatus {
@@ -201,6 +207,8 @@ impl Default for ModelStatus {
             trained_at: None,
             sample_count: None,
             accuracy: None,
+            transactions_with_categories_count: None,
+            transactions_with_note_no_category: None,
         }
     }
 }

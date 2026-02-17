@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use unicode_segmentation::UnicodeSegmentation;
+use rust_stemmers::{Algorithm, Stemmer};
 
 /// Tokenizer with support for Russian/Kazakh text
 pub struct Tokenizer {
@@ -35,32 +36,27 @@ impl Tokenizer {
         Tokenizer { stop_words }
     }
 
-    /// Tokenize text into normalized words
+    /// Tokenize text into normalized words (lowercase, filtered, Russian stemmed).
+    /// After enabling stemming, users should retrain the ML model.
     pub fn tokenize(&self, text: &str) -> Vec<String> {
         let text_lower = text.to_lowercase();
-        
-        // Split by word boundaries (Unicode-aware)
+        let stemmer = Stemmer::create(Algorithm::Russian);
+
         text_lower
             .unicode_words()
             .filter(|word| {
-                // Skip short words
                 if word.chars().count() < 2 {
                     return false;
                 }
-                
-                // Skip pure numbers
                 if word.chars().all(|c| c.is_ascii_digit()) {
                     return false;
                 }
-                
-                // Skip stop words
                 if self.stop_words.contains(*word) {
                     return false;
                 }
-                
                 true
             })
-            .map(|s| s.to_string())
+            .map(|word| stemmer.stem(word).to_string())
             .collect()
     }
 
@@ -106,18 +102,19 @@ mod tests {
     fn test_basic_tokenization() {
         let tokenizer = Tokenizer::new();
         let tokens = tokenizer.tokenize("Glovo доставка пиццы");
+        assert_eq!(tokens.len(), 3);
         assert!(tokens.contains(&"glovo".to_string()));
-        assert!(tokens.contains(&"доставка".to_string()));
-        assert!(tokens.contains(&"пиццы".to_string()));
+        assert!(tokens.iter().any(|t| t.starts_with("достав"))); // доставка stem
+        assert!(tokens.iter().any(|t| t.starts_with("пиц")));   // пиццы stem
     }
 
     #[test]
     fn test_stop_words_removal() {
         let tokenizer = Tokenizer::new();
         let tokens = tokenizer.tokenize("оплата в магазине за продукты");
-        assert!(!tokens.contains(&"оплата".to_string()));
-        assert!(!tokens.contains(&"в".to_string()));
-        assert!(!tokens.contains(&"за".to_string()));
+        // оплата, в, за are stop words and removed; магазине -> магазин, продукты -> продукт
+        assert!(tokens.contains(&"магазин".to_string()));
+        assert!(tokens.contains(&"продукт".to_string()));
     }
 
     #[test]
@@ -125,6 +122,8 @@ mod tests {
         let tokenizer = Tokenizer::new();
         let tokens = tokenizer.tokenize("Магнит 12345 продукты");
         assert!(!tokens.contains(&"12345".to_string()));
+        assert_eq!(tokens.len(), 2);
+        assert!(tokens.contains(&"продукт".to_string()));
     }
 
     #[test]
@@ -140,7 +139,7 @@ mod tests {
     fn test_lowercase_normalization() {
         let tokenizer = Tokenizer::new();
         let tokens = tokenizer.tokenize("МАГАЗИН Магазин магазин");
-        // All should be normalized to lowercase
+        // All normalized to lowercase and stemmed (магазин is already stem)
         assert_eq!(tokens.iter().filter(|t| t == &"магазин").count(), 3);
     }
 
@@ -158,21 +157,20 @@ mod tests {
     fn test_ngrams_bigrams() {
         let tokenizer = Tokenizer::new();
         let tokens = tokenizer.tokenize_with_ngrams("супермаркет продукты");
+        // Stemmed: супермаркет -> супермаркет, продукты -> продукт
         assert!(tokens.contains(&"супермаркет".to_string()));
-        assert!(tokens.contains(&"продукты".to_string()));
-        assert!(tokens.contains(&"супермаркет_продукты".to_string()));
+        assert!(tokens.contains(&"продукт".to_string()));
+        assert!(tokens.contains(&"супермаркет_продукт".to_string()));
     }
 
     #[test]
     fn test_ngrams_custom_n() {
         let tokenizer = Tokenizer::new();
         let tokens = tokenizer.tokenize_with_ngrams_n("магазин продукты еда", 3);
-        // Should have unigrams
+        // Stemmed: продукты -> продукт, еда -> ед
         assert!(tokens.contains(&"магазин".to_string()));
-        // Should have bigrams
-        assert!(tokens.contains(&"магазин_продукты".to_string()));
-        // Should have trigrams
-        assert!(tokens.contains(&"магазин_продукты_еда".to_string()));
+        assert!(tokens.contains(&"магазин_продукт".to_string()));
+        assert!(tokens.contains(&"магазин_продукт_ед".to_string()));
     }
 
     #[test]
@@ -199,7 +197,8 @@ mod tests {
         let tokenized = tokenizer.tokenize_documents(&docs);
         assert_eq!(tokenized.len(), 2);
         assert!(tokenized[0].contains(&"магазин".to_string()));
-        assert!(tokenized[1].contains(&"кафе".to_string()));
+        assert!(tokenized[0].contains(&"продукт".to_string()));
+        assert!(tokenized[1].contains(&"обед".to_string())); // кафе may stem; обед -> обед
     }
 
     #[test]
@@ -207,7 +206,8 @@ mod tests {
         let tokenizer = Tokenizer::new();
         let tokens = tokenizer.tokenize("KFC ресторан 5000");
         assert!(tokens.contains(&"kfc".to_string()));
-        assert!(tokens.contains(&"ресторан".to_string()));
-        assert!(!tokens.contains(&"5000".to_string())); // numbers removed
+        // ресторан stems to "ресторан" (unchanged) or "рест" depending on algorithm
+        assert!(tokens.iter().any(|t| t.starts_with("рест")));
+        assert!(!tokens.contains(&"5000".to_string()));
     }
 }

@@ -5,7 +5,7 @@ use rusqlite::Connection;
 use std::path::PathBuf;
 
 pub use queries::*;
-pub use schema::{create_tables, seed_categories};
+pub use schema::{clear_all_data, create_tables, seed_categories};
 
 /// Gets the database path. Uses directories crate for reliable cross-platform paths
 /// (avoids issues with Tauri path resolution in dev mode).
@@ -26,16 +26,39 @@ pub fn get_db_path(_app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
 /// - cipher_hmac_algorithm = HMAC_SHA256
 /// - cipher_kdf_algorithm = PBKDF2_HMAC_SHA256
 pub fn open_connection(db_path: &PathBuf) -> Result<Connection, String> {
+    let conn = match try_open_encrypted(db_path) {
+        Ok(c) => return Ok(c),
+        Err(e) => {
+            if e.contains("file is not a database") || e.contains("not a database") {
+                // Файл пустой, повреждён или не в формате SQLCipher — удаляем и создаём заново
+                let _ = std::fs::remove_file(db_path);
+                let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
+                let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
+                try_open_encrypted(db_path)?
+            } else {
+                return Err(e);
+            }
+        }
+    };
+    Ok(conn)
+}
+
+fn try_open_encrypted(db_path: &PathBuf) -> Result<Connection, String> {
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
 
-    // Получаем ключ шифрования (hex)
     let key = crate::crypto::get_or_create_key()?;
 
-    // Ключ задаём первым и в формате blob literal x'hex' (требование SQLCipher для сырого ключа)
-    conn.execute(&format!("PRAGMA key = \"x'{}'\"", key), [])
-        .map_err(|e| format!("Failed to configure SQLCipher: {}", e))?;
+    {
+        let pragma_sql = format!("PRAGMA key = \"x'{}'\"", key);
+        let mut stmt = conn
+            .prepare(&pragma_sql)
+            .map_err(|e| format!("Failed to configure SQLCipher: {}", e))?;
+        let mut rows = stmt
+            .query([])
+            .map_err(|e| format!("Failed to configure SQLCipher: {}", e))?;
+        while let Some(_) = rows.next().map_err(|e| format!("Failed to configure SQLCipher: {}", e))? {}
+    }
 
-    // Остальные настройки SQLCipher и журнала
     conn.execute_batch(
         "PRAGMA cipher_page_size = 4096;
          PRAGMA kdf_iter = 256000;
@@ -46,7 +69,6 @@ pub fn open_connection(db_path: &PathBuf) -> Result<Connection, String> {
     )
     .map_err(|e| format!("Failed to configure SQLCipher: {}", e))?;
 
-    // Проверяем, что ключ работает, выполняя простой запрос
     conn.query_row("SELECT count(*) FROM sqlite_master", [], |_| Ok(()))
         .map_err(|_| "Invalid encryption key or corrupted database".to_string())?;
 
@@ -79,7 +101,18 @@ pub fn is_database_encrypted(db_path: &PathBuf) -> bool {
 
 pub fn init_db(conn: &Connection) -> Result<(), String> {
     schema::create_tables(conn)?;
-    schema::seed_categories(conn)?;
+    // Seed default categories for every user that has none (e.g. new default user after migration)
+    let mut stmt = conn
+        .prepare("SELECT id FROM users")
+        .map_err(|e| e.to_string())?;
+    let user_ids: Vec<i64> = stmt
+        .query_map([], |r| r.get(0))
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .collect();
+    for user_id in user_ids {
+        let _ = schema::seed_categories(conn, user_id);
+    }
     Ok(())
 }
 

@@ -38,10 +38,12 @@ export function Import() {
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [skipDuplicates, setSkipDuplicates] = useState(true);
   const [result, setResult] = useState<BankImportResult | null>(null);
+  const [showTrainPrompt, setShowTrainPrompt] = useState(false);
+  const [trainingInProgress, setTrainingInProgress] = useState(false);
 
   // Transaction editing
   const [editedTransactions, setEditedTransactions] = useState<
-    (ParsedTransaction & { selected: boolean; categoryId: number | null })[]
+    (ParsedTransaction & { selected: boolean; categoryId: number | null; forceImport?: boolean })[]
   >([]);
 
   useEffect(() => {
@@ -75,7 +77,14 @@ export function Import() {
 
       if (selected && typeof selected === "string") {
         setLoading(true);
-        const parsed = await api.parseBankStatement(selected);
+        const llmEnabled = localStorage.getItem("llm_enabled") === "true";
+        const useEmbedded = localStorage.getItem("llm_use_embedded") === "true";
+        const parsed = await api.parseBankStatement(selected, {
+          useLlm: llmEnabled || useEmbedded || undefined,
+          useEmbedded: useEmbedded || undefined,
+          ollamaUrl: !useEmbedded && llmEnabled ? (localStorage.getItem("ollama_url") ?? undefined) : undefined,
+          ollamaModel: !useEmbedded && llmEnabled ? (localStorage.getItem("ollama_model") ?? undefined) : undefined,
+        });
         setStatement(parsed);
 
         // Initialize edited transactions
@@ -84,6 +93,7 @@ export function Import() {
             ...tx,
             selected: !tx.is_duplicate,
             categoryId: tx.suggested_category_id,
+            forceImport: false,
           }))
         );
 
@@ -109,7 +119,7 @@ export function Import() {
         transaction_type: tx.transaction_type,
         description: tx.description,
         category_id: tx.categoryId,
-        skip_if_duplicate: skipDuplicates,
+        skip_if_duplicate: tx.is_duplicate ? !tx.forceImport : true,
       }));
 
     if (toImport.length === 0) {
@@ -126,6 +136,7 @@ export function Import() {
       });
       setResult(importResult);
       setStep("result");
+      setShowTrainPrompt(importResult.imported > 0);
 
       if (importResult.imported > 0) {
         showToast(`Импортировано: ${importResult.imported} транзакций`, "success");
@@ -144,6 +155,20 @@ export function Import() {
     setEditedTransactions([]);
     setResult(null);
     setError(null);
+    setShowTrainPrompt(false);
+  };
+
+  const handleTrainModel = async () => {
+    try {
+      setTrainingInProgress(true);
+      const trainResult = await api.trainModel();
+      showToast(trainResult.message || "Модель обучена", trainResult.success ? "success" : "info");
+      setShowTrainPrompt(false);
+    } catch (e) {
+      showToast("Ошибка обучения модели", "error");
+    } finally {
+      setTrainingInProgress(false);
+    }
   };
 
   const toggleTransaction = (index: number) => {
@@ -426,8 +451,24 @@ export function Import() {
                             {tx.description}
                           </span>
                           {tx.is_duplicate && (
-                            <span className="px-1.5 py-0.5 text-xs rounded bg-amber-500/10 text-amber-600">
-                              Дубликат?
+                            <span className="inline-flex items-center gap-2">
+                              <span className="px-1.5 py-0.5 text-xs rounded bg-amber-500/10 text-amber-600">
+                                Дубликат?
+                              </span>
+                              <label className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={!!tx.forceImport}
+                                  onChange={() =>
+                                    setEditedTransactions((prev) =>
+                                      prev.map((p, i) =>
+                                        i === index ? { ...p, forceImport: !p.forceImport } : p
+                                      )
+                                    )}
+                                  className="w-3.5 h-3.5 rounded border-zinc-300 text-emerald-500"
+                                />
+                                Всё равно импортировать
+                              </label>
                             </span>
                           )}
                         </div>
@@ -543,6 +584,29 @@ export function Import() {
                   <li>... и ещё {result.errors.length - 5}</li>
                 )}
               </ul>
+            </div>
+          )}
+
+          {showTrainPrompt && result.imported > 0 && (
+            <div className="mb-6 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50">
+              <p className="text-zinc-700 dark:text-zinc-300 mb-3">Обучить модель по новым данным?</p>
+              <div className="flex justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleTrainModel}
+                  disabled={trainingInProgress}
+                  className="px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50"
+                >
+                  {trainingInProgress ? "Обучение…" : "Обучить"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowTrainPrompt(false)}
+                  className="px-4 py-2 rounded-lg bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-600"
+                >
+                  Позже
+                </button>
+              </div>
             </div>
           )}
 

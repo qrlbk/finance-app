@@ -7,6 +7,7 @@ pub mod anomaly;
 pub mod forecast;
 pub mod features;
 pub mod insights;
+pub mod rules;
 
 pub use model::CategoryModel;
 pub use trainer::ModelTrainer;

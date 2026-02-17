@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use rusqlite::Connection;
 
 use super::tokenizer::Tokenizer;
@@ -55,9 +55,25 @@ impl ModelTrainer {
         let data = trainer.load_training_data(conn)?;
         
         if data.notes.len() < 20 {
+            let with_note_no_cat: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM transactions WHERE (note IS NOT NULL AND note != '') AND category_id IS NULL",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            let hint = if with_note_no_cat > 0 {
+                format!(
+                    " У вас {} транзакций с описанием без категории — назначьте категории хотя бы 20 из них в разделе «Транзакции», затем обучите модель снова.",
+                    with_note_no_cat
+                )
+            } else {
+                String::new()
+            };
             return Err(format!(
-                "Недостаточно данных для обучения. Нужно минимум 20 транзакций с заполненными категориями и заметками, сейчас: {}",
-                data.notes.len()
+                "Недостаточно данных для обучения. Нужно минимум 20 транзакций с заполненными категориями и заметками, сейчас: {}.{}",
+                data.notes.len(),
+                hint
             ));
         }
 
@@ -79,6 +95,35 @@ impl ModelTrainer {
                 valid_indices.push(i);
             }
         }
+
+        // Filter out classes with too few samples (min 3 per class)
+        const MIN_SAMPLES_PER_CLASS: usize = 3;
+        let mut class_counts: HashMap<i64, usize> = HashMap::new();
+        for &label in &valid_labels {
+            *class_counts.entry(label).or_insert(0) += 1;
+        }
+        let kept_classes: HashSet<i64> = class_counts
+            .iter()
+            .filter(|(_, &c)| c >= MIN_SAMPLES_PER_CLASS)
+            .map(|(&k, _)| k)
+            .collect();
+        let mut valid_tokens_filtered = Vec::new();
+        let mut valid_labels_filtered = Vec::new();
+        let mut valid_indices_filtered = Vec::new();
+        for i in 0..valid_tokens.len() {
+            let label = valid_labels[i];
+            if kept_classes.contains(&label) {
+                valid_tokens_filtered.push(valid_tokens[i].clone());
+                valid_labels_filtered.push(label);
+                valid_indices_filtered.push(valid_indices[i]);
+            }
+        }
+        let valid_tokens = valid_tokens_filtered;
+        let valid_labels = valid_labels_filtered;
+        let valid_indices = valid_indices_filtered;
+
+        let mut category_names = data.category_names.clone();
+        category_names.retain(|k, _| kept_classes.contains(k));
 
         if valid_tokens.len() < 20 {
             return Err(format!(
@@ -111,11 +156,11 @@ impl ModelTrainer {
         // Calculate accuracy using simple cross-validation
         let accuracy = trainer.evaluate_accuracy(&features, &valid_labels);
 
-        // Create and return model with enhanced features flag
+        // Create and return model with enhanced features flag (category_names filtered to kept classes)
         let model = CategoryModel::new_enhanced(
             &trainer.vectorizer,
             &trainer.classifier,
-            data.category_names,
+            category_names,
             valid_tokens.len(),
             Some(accuracy),
             true, // use_enhanced_features

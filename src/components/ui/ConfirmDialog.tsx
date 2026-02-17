@@ -8,6 +8,8 @@ interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: "danger" | "default";
+  loading?: boolean;
+  loadingConfirmLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -19,6 +21,8 @@ export function ConfirmDialog({
   confirmLabel = "Подтвердить",
   cancelLabel = "Отмена",
   variant = "default",
+  loading = false,
+  loadingConfirmLabel = "Загрузка…",
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -96,9 +100,10 @@ export function ConfirmDialog({
             ref={confirmButtonRef}
             type="button"
             onClick={onConfirm}
-            className={`px-4 py-2.5 rounded-lg btn-transition focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-zinc-900 ${confirmClass}`}
+            disabled={loading}
+            className={`px-4 py-2.5 rounded-lg btn-transition focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed ${confirmClass}`}
           >
-            {confirmLabel}
+            {loading ? loadingConfirmLabel : confirmLabel}
           </button>
         </div>
       </div>

@@ -52,10 +52,27 @@ impl NaiveBayesClassifier {
         self.classes = class_counts.keys().cloned().collect();
         self.classes.sort();
 
-        // Calculate prior probabilities (log scale)
+        // Balanced class weights: inverse frequency so rare classes get higher prior weight
+        let n_classes = self.classes.len() as f64;
+        let eps = 1e-9;
+        let weights: HashMap<i64, f64> = self
+            .classes
+            .iter()
+            .map(|&c| {
+                let count = class_counts.get(&c).copied().unwrap_or(0) as f64;
+                (c, 1.0 / (count + eps))
+            })
+            .collect();
+        let weight_sum: f64 = weights.values().sum();
+        if weight_sum <= 0.0 {
+            return;
+        }
+
+        // Prior = normalized weight (so rare classes get larger prior)
         self.class_log_priors.clear();
-        for (&class, &count) in &class_counts {
-            self.class_log_priors.insert(class, (count as f64 / n_samples).ln());
+        for (&class, &w) in &weights {
+            let prior = w / weight_sum;
+            self.class_log_priors.insert(class, prior.ln());
         }
 
         // Calculate feature probabilities per class (log scale)

@@ -1,5 +1,7 @@
+import { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Wallet } from "lucide-react";
+import { Plus, Wallet, Bell } from "lucide-react";
+import type { BudgetAlert } from "../../lib/api";
 
 function formatAmount(amount: number) {
   return new Intl.NumberFormat("ru-KZ", {
@@ -13,22 +15,81 @@ interface HeaderProps {
   title: string;
   totalBalance?: number;
   balanceLoading?: boolean;
+  budgetAlerts?: BudgetAlert[];
+  currencies?: string[];
 }
 
-export function Header({ title, totalBalance, balanceLoading }: HeaderProps) {
+export function Header({ title, totalBalance, balanceLoading, budgetAlerts = [], currencies = [] }: HeaderProps) {
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const alertsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (alertsRef.current && !alertsRef.current.contains(e.target as Node)) {
+        setAlertsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   return (
     <header className="h-16 px-6 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex-shrink-0">
       <h2 className="text-lg font-medium">{title}</h2>
       
       <div className="flex items-center gap-4">
+        {/* Budget alerts */}
+        {budgetAlerts.length > 0 && (
+          <div className="relative" ref={alertsRef}>
+            <button
+              type="button"
+              onClick={() => setAlertsOpen((v) => !v)}
+              className="relative p-2 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-amber-500 btn-transition"
+              aria-label="Бюджетные уведомления"
+            >
+              <Bell size={20} />
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-amber-500 text-white text-xs font-medium px-1">
+                {budgetAlerts.length}
+              </span>
+            </button>
+            {alertsOpen && (
+              <div className="absolute right-0 top-full mt-1 w-72 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg py-2 z-50">
+                <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Бюджеты</span>
+                </div>
+                <ul className="max-h-60 overflow-y-auto">
+                  {budgetAlerts.map((alert, i) => (
+                    <li key={i} className="px-3 py-2 text-sm border-b border-zinc-100 dark:border-zinc-800 last:border-0">
+                      <span className="font-medium text-zinc-900 dark:text-zinc-100">{alert.category_name}</span>
+                      <span className={alert.severity === "exceeded" ? " text-red-500" : " text-amber-500"}>
+                        {" "}
+                        {alert.severity === "exceeded"
+                          ? `превышен (${Math.round(alert.percent_used)}%)`
+                          : `близок к лимиту (${Math.round(alert.percent_used)}%)`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Multi-currency warning */}
+        {currencies.length > 1 && (
+          <span className="text-xs text-amber-600 dark:text-amber-400 max-w-[140px] sm:max-w-[180px] truncate" title="Итоги без конвертации. Для корректного баланса используйте одну валюту.">
+            Несколько валют
+          </span>
+        )}
         {/* Balance display */}
-        <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800/50">
+        <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800/50" title={currencies.length > 1 ? "Итоги без конвертации. Для корректного баланса используйте одну валюту." : undefined}>
           <Wallet size={18} className="text-blue-400" />
           {balanceLoading ? (
             <div className="h-5 w-24 rounded bg-zinc-200 dark:bg-zinc-700 animate-pulse" />
           ) : (
             <span className="font-medium text-blue-400">
               {formatAmount(totalBalance ?? 0)} ₸
+              {currencies.length > 1 && <span className="ml-1 text-xs font-normal text-amber-600 dark:text-amber-400">(без конвертации)</span>}
             </span>
           )}
         </div>

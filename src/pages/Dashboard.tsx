@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { TrendingUp, TrendingDown, BarChart3, AlertTriangle, ArrowUpRight, ArrowDownRight, Minus, PiggyBank, Clock } from "lucide-react";
+import { TrendingUp, TrendingDown, BarChart3, AlertTriangle, ArrowUpRight, ArrowDownRight, Minus, PiggyBank, Clock, ArrowRightLeft } from "lucide-react";
 import { SummaryCards } from "../components/dashboard/SummaryCards";
 import { QuickStats } from "../components/dashboard/QuickStats";
-import { api, type Summary, type TransactionWithDetails, type Insights, type Budget } from "../lib/api";
+import { api, type Summary, type TransactionWithDetails, type Insights, type Budget, type BudgetAlert } from "../lib/api";
 
 export function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -11,6 +11,7 @@ export function Dashboard() {
   const [expenseByCategory, setExpenseByCategory] = useState<{ category_name: string; total: number }[]>([]);
   const [insights, setInsights] = useState<Insights | null>(null);
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [budgetAlerts, setBudgetAlerts] = useState<BudgetAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,18 +20,20 @@ export function Dashboard() {
       setLoading(true);
       setError(null);
       const now = new Date();
-      const [s, txs, expenses, insightsData, budgetData] = await Promise.all([
+      const [s, txs, expenses, insightsData, budgetData, alertsData] = await Promise.all([
         api.getSummary(),
         api.getTransactions({ limit: 10 }),
         api.getExpenseByCategory({ year: now.getFullYear(), month: now.getMonth() + 1 }),
         api.getInsights().catch(() => null), // Don't fail if insights fail
         api.getBudgets().catch(() => []),
+        api.getBudgetAlerts().catch(() => []),
       ]);
       setSummary(s);
       setTransactions(txs);
       setExpenseByCategory(expenses);
       setInsights(insightsData);
       setBudgets(budgetData);
+      setBudgetAlerts(alertsData);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -72,11 +75,42 @@ export function Dashboard() {
           </button>
         </div>
       )}
+
+      {summary?.currencies && summary.currencies.length > 1 && (
+        <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 dark:bg-amber-500/10 animate-fade-in" role="alert">
+          <p className="text-sm text-zinc-700 dark:text-zinc-300">
+            Итоги приведены без конвертации. У вас счета в разных валютах ({summary.currencies.join(", ")}). Для корректного общего баланса используйте одну валюту или добавьте курсы в настройках.
+          </p>
+        </div>
+      )}
+
+      {budgetAlerts.length > 0 && (
+        <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 dark:bg-amber-500/10 animate-fade-in">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle size={18} className="text-amber-500" />
+            <h3 className="font-medium text-zinc-900 dark:text-zinc-100">Внимание: бюджеты</h3>
+          </div>
+          <ul className="space-y-1 text-sm text-zinc-600 dark:text-zinc-300">
+            {budgetAlerts.map((alert, i) => (
+              <li key={i}>
+                <span className="font-medium">{alert.category_name}</span>
+                <span className={alert.severity === "exceeded" ? " text-red-500" : " text-amber-500"}>
+                  {" "}
+                  {alert.severity === "exceeded"
+                    ? `— превышен (${Math.round(alert.percent_used)}%)`
+                    : `— близок к лимиту (${Math.round(alert.percent_used)}%)`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       
       <SummaryCards 
         summary={summary} 
         loading={loading} 
         expenseByCategory={expenseByCategory}
+        currencies={summary?.currencies}
       />
       
       {/* Quick action buttons */}
@@ -94,6 +128,13 @@ export function Dashboard() {
         >
           <TrendingDown size={18} />
           Добавить расход
+        </Link>
+        <Link
+          to="/transfers"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 btn-transition shadow-sm hover:shadow-md"
+        >
+          <ArrowRightLeft size={18} />
+          Перевод
         </Link>
       </div>
       

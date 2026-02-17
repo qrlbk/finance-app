@@ -25,6 +25,7 @@ export function Categories() {
     category_type: "expense" as "income" | "expense",
     color: "#64748b",
     icon: null as string | null,
+    parent_id: null as number | null,
   });
 
   const loadData = async () => {
@@ -47,6 +48,17 @@ export function Categories() {
   const incomeCategories = categories.filter((c) => c.category_type === "income");
   const expenseCategories = categories.filter((c) => c.category_type === "expense");
 
+  const categoryTree = (list: Category[]) => {
+    const roots = list.filter((c) => !c.parent_id);
+    const childrenOf = (pid: number) => list.filter((c) => c.parent_id === pid);
+    return roots.flatMap((root) => [
+      { category: root, indent: false },
+      ...childrenOf(root.id).map((category) => ({ category, indent: true })),
+    ]);
+  };
+  const incomeTree = categoryTree(incomeCategories);
+  const expenseTree = categoryTree(expenseCategories);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return;
@@ -66,6 +78,7 @@ export function Categories() {
           category_type: form.category_type,
           color: form.color,
           icon: form.icon,
+          parent_id: form.parent_id,
         });
         showToast("Категория создана", "success");
       }
@@ -83,6 +96,7 @@ export function Categories() {
       category_type: "expense",
       color: "#64748b",
       icon: null,
+      parent_id: null,
     });
     setShowForm(false);
     setEditingId(null);
@@ -94,6 +108,7 @@ export function Categories() {
       category_type: c.category_type as "income" | "expense",
       color: c.color || "#64748b",
       icon: c.icon,
+      parent_id: c.parent_id,
     });
     setEditingId(c.id);
     setShowForm(true);
@@ -112,8 +127,8 @@ export function Categories() {
     }
   };
 
-  const CategoryCard = ({ category }: { category: Category }) => (
-    <div className="flex items-center justify-between p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors">
+  const CategoryCard = ({ category, indent = false }: { category: Category; indent?: boolean }) => (
+    <div className={`flex items-center justify-between p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors ${indent ? "ml-6 border-l-2 border-l-zinc-300 dark:border-l-zinc-600" : ""}`}>
       <div className="flex items-center gap-3">
         <div
           className="w-10 h-10 rounded-lg flex items-center justify-center"
@@ -159,6 +174,7 @@ export function Categories() {
               category_type: "expense",
               color: "#64748b",
               icon: null,
+              parent_id: null,
             });
           }}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
@@ -206,6 +222,26 @@ export function Categories() {
                     Доход
                   </button>
                 </div>
+              </div>
+            )}
+
+            {!editingId && (
+              <div>
+                <label className="block text-sm text-zinc-400 mb-1">Родительская категория</label>
+                <select
+                  value={form.parent_id ?? ""}
+                  onChange={(e) => setForm((f) => ({ ...f, parent_id: e.target.value ? Number(e.target.value) : null }))}
+                  className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white form-transition focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="">— Нет (корневая) —</option>
+                  {(form.category_type === "income" ? incomeCategories : expenseCategories)
+                    .filter((c) => !c.parent_id)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                </select>
               </div>
             )}
 
@@ -285,8 +321,8 @@ export function Categories() {
           </div>
         ) : expenseCategories.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {expenseCategories.map((c) => (
-              <CategoryCard key={c.id} category={c} />
+            {expenseTree.map(({ category, indent }) => (
+              <CategoryCard key={category.id} category={category} indent={indent} />
             ))}
           </div>
         ) : (
@@ -315,8 +351,8 @@ export function Categories() {
           </div>
         ) : incomeCategories.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {incomeCategories.map((c) => (
-              <CategoryCard key={c.id} category={c} />
+            {incomeTree.map(({ category, indent }) => (
+              <CategoryCard key={category.id} category={category} indent={indent} />
             ))}
           </div>
         ) : (

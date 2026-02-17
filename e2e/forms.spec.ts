@@ -104,7 +104,7 @@ test.describe('Settings Page', () => {
               { id: 1, name: 'Продукты', category_type: 'expense', icon: null, color: '#22c55e' },
             ],
             get_budgets: [],
-            get_model_status: { trained: false, trained_at: null, sample_count: null, accuracy: null },
+            get_model_status: { trained: false, trained_at: null, sample_count: null, accuracy: null, transactions_with_categories_count: null },
             train_model: { success: true, sample_count: 10, accuracy: 0.85, message: 'OK' },
           };
           return mocks[cmd] ?? null;

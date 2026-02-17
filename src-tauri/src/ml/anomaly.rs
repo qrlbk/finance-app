@@ -17,29 +17,26 @@ pub struct AnomalyDetector;
 impl AnomalyDetector {
     /// Detect anomalies in recent spending compared to historical patterns
     /// Uses Z-score: if spending deviates > 2 std from mean, it's anomalous
-    pub fn detect_anomalies(conn: &Connection, days: i32) -> Result<Vec<Anomaly>, String> {
+    pub fn detect_anomalies(conn: &Connection, user_id: i64, days: i32) -> Result<Vec<Anomaly>, String> {
         let mut anomalies = Vec::new();
 
-        // Check overall spending anomaly for the period
-        if let Some(anomaly) = Self::check_total_spending_anomaly(conn, days)? {
+        if let Some(anomaly) = Self::check_total_spending_anomaly(conn, user_id, days)? {
             anomalies.push(anomaly);
         }
 
-        // Check per-category anomalies
-        let category_anomalies = Self::check_category_anomalies(conn, days)?;
+        let category_anomalies = Self::check_category_anomalies(conn, user_id, days)?;
         anomalies.extend(category_anomalies);
 
         Ok(anomalies)
     }
 
     /// Check if total recent spending is anomalous
-    fn check_total_spending_anomaly(conn: &Connection, days: i32) -> Result<Option<Anomaly>, String> {
-        // Get monthly spending for the last 6 months
+    fn check_total_spending_anomaly(conn: &Connection, user_id: i64, days: i32) -> Result<Option<Anomaly>, String> {
         let mut stmt = conn
             .prepare(
                 "SELECT strftime('%Y-%m', date) as month, SUM(amount) as total
                  FROM transactions
-                 WHERE type = 'expense'
+                 WHERE user_id = ?1 AND type = 'expense'
                    AND date >= date('now', '-6 months')
                  GROUP BY month
                  ORDER BY month"
@@ -47,7 +44,7 @@ impl AnomalyDetector {
             .map_err(|e| format!("Query error: {}", e))?;
 
         let monthly_totals: Vec<f64> = stmt
-            .query_map([], |row| {
+            .query_map([user_id], |row| {
                 let total: f64 = row.get(1)?;
                 Ok(total)
             })
@@ -67,15 +64,14 @@ impl AnomalyDetector {
             return Ok(None); // Too little variance
         }
 
-        // Get current period spending
         let current: f64 = conn
             .query_row(
                 &format!(
                     "SELECT COALESCE(SUM(amount), 0) FROM transactions 
-                     WHERE type = 'expense' AND date >= date('now', '-{} days')",
+                     WHERE user_id = ?1 AND type = 'expense' AND date >= date('now', '-{} days')",
                     days
                 ),
-                [],
+                [user_id],
                 |row| row.get(0),
             )
             .unwrap_or(0.0);
@@ -102,10 +98,9 @@ impl AnomalyDetector {
     }
 
     /// Check for anomalies in specific categories
-    fn check_category_anomalies(conn: &Connection, days: i32) -> Result<Vec<Anomaly>, String> {
+    fn check_category_anomalies(conn: &Connection, user_id: i64, days: i32) -> Result<Vec<Anomaly>, String> {
         let mut anomalies = Vec::new();
 
-        // Get categories with enough history
         let mut stmt = conn
             .prepare(
                 "SELECT c.id, c.name, 
@@ -117,11 +112,12 @@ impl AnomalyDetector {
                             strftime('%Y-%m', date) as month,
                             SUM(amount) as total
                      FROM transactions
-                     WHERE type = 'expense'
+                     WHERE user_id = ?1 AND type = 'expense'
                        AND date >= date('now', '-6 months')
                        AND category_id IS NOT NULL
                      GROUP BY category_id, month
                  ) monthly ON c.id = monthly.category_id
+                 WHERE c.user_id = ?1
                  GROUP BY c.id
                  HAVING months_count >= 3"
             )
@@ -134,7 +130,7 @@ impl AnomalyDetector {
         }
 
         let categories: Vec<CategoryStats> = stmt
-            .query_map([], |row| {
+            .query_map([user_id], |row| {
                 Ok(CategoryStats {
                     id: row.get(0)?,
                     name: row.get(1)?,
@@ -152,8 +148,8 @@ impl AnomalyDetector {
                 .prepare(
                     "SELECT SUM(amount) as total
                      FROM transactions
-                     WHERE type = 'expense'
-                       AND category_id = ?1
+                     WHERE user_id = ?1 AND type = 'expense'
+                       AND category_id = ?2
                        AND date >= date('now', '-6 months')
                        AND date < date('now', 'start of month')
                      GROUP BY strftime('%Y-%m', date)"
@@ -161,7 +157,7 @@ impl AnomalyDetector {
                 .map_err(|e| format!("Query error: {}", e))?;
 
             let historical: Vec<f64> = hist_stmt
-                .query_map([cat.id], |row| row.get(0))
+                .query_map(rusqlite::params![user_id, cat.id], |row| row.get(0))
                 .map_err(|e| format!("Query error: {}", e))?
                 .filter_map(|r| r.ok())
                 .collect();
@@ -180,12 +176,12 @@ impl AnomalyDetector {
                 .query_row(
                     &format!(
                         "SELECT COALESCE(SUM(amount), 0) FROM transactions 
-                         WHERE type = 'expense' 
-                           AND category_id = ?1 
+                         WHERE user_id = ?1 AND type = 'expense' 
+                           AND category_id = ?2 
                            AND date >= date('now', '-{} days')",
                         days
                     ),
-                    [cat.id],
+                    rusqlite::params![user_id, cat.id],
                     |row| row.get(0),
                 )
                 .unwrap_or(0.0);

@@ -86,7 +86,14 @@ export function Recurring() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(form.amount);
-    if (isNaN(amount) || amount <= 0) return;
+    if (isNaN(amount) || amount <= 0) {
+      showToast("Введите положительную сумму", "error");
+      return;
+    }
+    if (!form.account_id || !accounts.some((a) => a.id === form.account_id)) {
+      showToast("Выберите счёт", "error");
+      return;
+    }
 
     try {
       if (editingId) {
@@ -230,6 +237,7 @@ export function Recurring() {
             <span className="hidden sm:inline">Обработать</span>
           </button>
           <button
+            type="button"
             onClick={() => {
               setShowForm(true);
               setEditingId(null);
@@ -245,13 +253,19 @@ export function Recurring() {
                 is_active: true,
               });
             }}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
+            disabled={accounts.length === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition disabled:opacity-50 disabled:pointer-events-none"
           >
             <Plus size={18} />
             Добавить
           </button>
         </div>
       </div>
+      {accounts.length === 0 && !loading && (
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          Сначала добавьте счёт в разделе «Счета».
+        </p>
+      )}
 
       {/* Form */}
       {showForm && (
@@ -536,6 +550,7 @@ export function Recurring() {
           description="Настройте автоматические платежи для подписок, ЖКХ, или регулярного дохода."
           action={
             <button
+              type="button"
               onClick={() => {
                 setShowForm(true);
                 setEditingId(null);
@@ -551,7 +566,8 @@ export function Recurring() {
                   is_active: true,
                 });
               }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
+              disabled={accounts.length === 0}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition disabled:opacity-50 disabled:pointer-events-none"
             >
               <Plus size={18} />
               Добавить платёж

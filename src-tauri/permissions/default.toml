@@ -2,11 +2,18 @@
 identifier = "finance-commands"
 description = "Finance app commands"
 commands.allow = [
+  # Auth (no session required)
+  "register",
+  "login",
+  "logout",
+  "get_current_session",
+  "list_users",
   # Account commands
   "get_accounts",
   "create_account",
   "update_account",
   "delete_account",
+  "reassign_transactions_to_account",
   # Category commands
   "get_categories",
   "create_category",
@@ -18,6 +25,7 @@ commands.allow = [
   "update_transaction",
   "delete_transaction",
   "create_transfer",
+  "get_transfers",
   # Summary and reports
   "get_summary",
   "get_expense_by_category",
@@ -25,13 +33,21 @@ commands.allow = [
   # Backup/Export
   "export_backup",
   "restore_backup",
+  "reset_database",
   "export_data",
   "import_data",
+  "import_preview",
   "open_file",
   # ML commands
   "predict_category",
   "train_model",
   "get_model_status",
+  "get_embedded_llm_status",
+  "download_and_register_embedded_model",
+  "test_embedded_llm",
+  "start_ollama_server",
+  "chat_message",
+  "ensure_ollama_installed",
   "get_insights",
   "get_smart_insights",
   "get_forecast_details",

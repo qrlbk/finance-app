@@ -54,8 +54,12 @@ export function Transactions() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [assigningCategoryId, setAssigningCategoryId] = useState<number | null>(null);
+  const [autoAssigning, setAutoAssigning] = useState(false);
   const [showTransferForm, setShowTransferForm] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const amountInputRef = useRef<HTMLInputElement>(null);
 
@@ -71,6 +75,7 @@ export function Transactions() {
     date_to: "",
     account_id: null as number | null,
     category_id: null as number | null,
+    uncategorized_only: false,
     transaction_type: "" as "" | "income" | "expense",
     search_note: "",
   });
@@ -87,17 +92,21 @@ export function Transactions() {
   const [suggestedCategory, setSuggestedCategory] = useState<CategoryPrediction | null>(null);
   const debouncedNote = useDebounce(form.note, 300);
 
-  const emptyFilters = {
+  const PAGE_SIZE = 50;
+
+const emptyFilters = {
     date_from: "",
     date_to: "",
     account_id: null as number | null,
     category_id: null as number | null,
+    uncategorized_only: false,
     transaction_type: "" as "" | "income" | "expense",
     search_note: "",
   };
 
   const hasActiveFilters = filters.date_from || filters.date_to || 
     filters.account_id || filters.category_id || 
+    filters.uncategorized_only ||
     filters.transaction_type || filters.search_note;
 
   const loadData = async (filterOverride?: typeof filters) => {
@@ -105,12 +114,15 @@ export function Transactions() {
     try {
       setLoading(true);
       setError(null);
+      setHasMore(true);
       const filterParams = {
-        limit: 500,
+        limit: PAGE_SIZE,
+        offset: 0,
         date_from: f.date_from || undefined,
         date_to: f.date_to || undefined,
         account_id: f.account_id ?? undefined,
         category_id: f.category_id ?? undefined,
+        uncategorized_only: f.uncategorized_only || undefined,
         transaction_type: f.transaction_type || undefined,
         search_note: f.search_note.trim() || undefined,
       };
@@ -120,6 +132,7 @@ export function Transactions() {
         api.getCategories(),
       ]);
       setTransactions(txs);
+      setHasMore(txs.length === PAGE_SIZE);
       setAccounts(accs);
       setCategories(cats);
       if (accs.length > 0 && form.account_id === 0) {
@@ -132,6 +145,31 @@ export function Transactions() {
     }
   };
 
+  const loadMore = async () => {
+    const f = filters;
+    try {
+      setLoadingMore(true);
+      const filterParams = {
+        limit: PAGE_SIZE,
+        offset: transactions.length,
+        date_from: f.date_from || undefined,
+        date_to: f.date_to || undefined,
+        account_id: f.account_id ?? undefined,
+        category_id: f.category_id ?? undefined,
+        uncategorized_only: f.uncategorized_only || undefined,
+        transaction_type: f.transaction_type || undefined,
+        search_note: f.search_note.trim() || undefined,
+      };
+      const txs = await api.getTransactions(filterParams);
+      setTransactions((prev) => [...prev, ...txs]);
+      setHasMore(txs.length === PAGE_SIZE);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   const applyFilters = () => loadData();
 
   const handleResetFilters = () => {
@@ -139,7 +177,13 @@ export function Transactions() {
     loadData(emptyFilters);
   };
 
-  const applyPreset = (preset: "thisMonth" | "thisWeek") => {
+  const applyPreset = (preset: "thisMonth" | "thisWeek" | "uncategorized") => {
+    if (preset === "uncategorized") {
+      const newFilters = { ...emptyFilters, uncategorized_only: true };
+      setFilters(newFilters);
+      loadData(newFilters);
+      return;
+    }
     const presets = getDatePresets();
     const newFilters = {
       ...emptyFilters,
@@ -170,9 +214,24 @@ export function Transactions() {
       // - it's an expense transaction (most common use case)
       if (debouncedNote.trim().length >= 3 && !form.category_id && form.transaction_type === "expense") {
         try {
-          // Pass amount and date for enhanced prediction
           const amount = parseFloat(form.amount) || undefined;
-          const prediction = await api.predictCategory(debouncedNote, amount, form.date);
+          let threshold: number | undefined;
+          try {
+            const v = localStorage.getItem("ml_confidence_threshold");
+            if (v != null) {
+              const n = parseFloat(v);
+              if (!Number.isNaN(n) && n >= 0.2 && n <= 0.9) threshold = n;
+            }
+          } catch {}
+          const llmEnabled = localStorage.getItem("llm_enabled") === "true";
+          const useEmbedded = localStorage.getItem("llm_use_embedded") === "true";
+          const prediction = await api.predictCategory(debouncedNote, amount, form.date, threshold, {
+            useLlm: llmEnabled || useEmbedded || undefined,
+            useEmbedded: useEmbedded || undefined,
+            ollamaUrl: !useEmbedded && llmEnabled ? (localStorage.getItem("ollama_url") ?? undefined) : undefined,
+            ollamaModel: !useEmbedded && llmEnabled ? (localStorage.getItem("ollama_model") ?? undefined) : undefined,
+            transactionType: form.transaction_type,
+          });
           setSuggestedCategory(prediction);
         } catch {
           setSuggestedCategory(null);
@@ -295,6 +354,143 @@ export function Transactions() {
     } catch (err) {
       setError(String(err));
       showToast("Ошибка при переводе", "error");
+    }
+  };
+
+  const handleQuickAssignCategory = async (tx: TransactionWithDetails, categoryId: number) => {
+    if (!categoryId) return;
+    setAssigningCategoryId(tx.id);
+    try {
+      await api.updateTransaction({
+        id: tx.id,
+        account_id: tx.account_id,
+        category_id: categoryId,
+        amount: Math.abs(tx.amount),
+        transaction_type: tx.transaction_type,
+        note: tx.note ?? null,
+        date: tx.date,
+      });
+      setTransactions((prev) =>
+        prev.map((t) =>
+          t.id === tx.id
+            ? {
+                ...t,
+                category_id: categoryId,
+                category_name: categories.find((c) => c.id === categoryId)?.name ?? null,
+              }
+            : t
+        )
+      );
+      showToast("Категория назначена", "success");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(msg ? `Ошибка назначения категории: ${msg}` : "Ошибка назначения категории", "error");
+    } finally {
+      setAssigningCategoryId(null);
+    }
+  };
+
+  const handleAutoAssignCategories = async () => {
+    const llmEnabled = localStorage.getItem("llm_enabled") === "true";
+    const useEmbedded = localStorage.getItem("llm_use_embedded") === "true";
+    if (!llmEnabled && !useEmbedded) {
+      showToast("Включите LLM в Настройках: «Подсказки категорий» → отметьте «Встроенная модель» или «Ollama вручную».", "info");
+      return;
+    }
+    setAutoAssigning(true);
+    try {
+      const allUncategorized = await api.getTransactions({
+        uncategorized_only: true,
+        limit: 500,
+      });
+      const uncategorized = allUncategorized.filter((tx) => (tx.note?.trim()?.length ?? 0) >= 2);
+      if (uncategorized.length === 0) {
+        showToast("Нет транзакций без категории с заметкой для подсказки", "info");
+        setAutoAssigning(false);
+        return;
+      }
+      api.startOllamaServer();
+      await new Promise((r) => setTimeout(r, 3000));
+      let assigned = 0;
+      let lastError: string | null = null;
+      const threshold = (() => {
+        try {
+          const v = localStorage.getItem("ml_confidence_threshold");
+          if (v != null) {
+            const n = parseFloat(v);
+            if (!Number.isNaN(n) && n >= 0.2 && n <= 0.9) return n;
+          }
+        } catch {}
+        return 0.3;
+      })();
+      const options = {
+        useLlm: true,
+        useEmbedded: useEmbedded || undefined,
+        ollamaUrl: !useEmbedded && llmEnabled ? (localStorage.getItem("ollama_url") ?? undefined) : undefined,
+        ollamaModel: !useEmbedded && llmEnabled ? (localStorage.getItem("ollama_model") ?? undefined) : undefined,
+      };
+      for (const tx of uncategorized) {
+        try {
+          const prediction = await api.predictCategory(
+            tx.note!.trim(),
+            tx.amount,
+            tx.date,
+            threshold,
+            { ...options, transactionType: tx.transaction_type }
+          );
+          if (prediction?.category_id) {
+            await api.updateTransaction({
+              id: tx.id,
+              account_id: tx.account_id,
+              category_id: prediction.category_id,
+              amount: Math.abs(tx.amount),
+              transaction_type: tx.transaction_type,
+              note: tx.note ?? null,
+              date: tx.date,
+            });
+            setTransactions((prev) =>
+              prev.map((t) =>
+                t.id === tx.id
+                  ? {
+                      ...t,
+                      category_id: prediction.category_id,
+                      category_name: prediction.category_name,
+                    }
+                  : t
+              )
+            );
+            assigned += 1;
+          }
+        } catch (e) {
+          lastError = e instanceof Error ? e.message : String(e);
+        }
+      }
+      if (assigned > 0) {
+        showToast(`Назначено категорий: ${assigned} из ${uncategorized.length}`, "success");
+        const filterParams = {
+          limit: PAGE_SIZE,
+          offset: 0,
+          date_from: filters.date_from || undefined,
+          date_to: filters.date_to || undefined,
+          account_id: filters.account_id ?? undefined,
+          category_id: filters.category_id ?? undefined,
+          uncategorized_only: filters.uncategorized_only || undefined,
+          transaction_type: filters.transaction_type || undefined,
+          search_note: filters.search_note.trim() || undefined,
+        };
+        const txs = await api.getTransactions(filterParams);
+        setTransactions(txs);
+        setHasMore(txs.length === PAGE_SIZE);
+      } else if (lastError) {
+        showToast(`Подсказки недоступны: ${lastError} Запустите Ollama или нажмите «Проверить» в Настройках.`, "error");
+      } else {
+        showToast(
+          "Модель не подобрала категории. Убедитесь, что Ollama запущен (кнопка «Проверить» в Настройках) и что у транзакций есть понятные описания.",
+          "info"
+        );
+      }
+    } finally {
+      setAutoAssigning(false);
     }
   };
 
@@ -480,6 +676,28 @@ export function Transactions() {
                 <Calendar size={14} />
                 Эта неделя
               </button>
+              <button
+                type="button"
+                onClick={() => applyPreset("uncategorized")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm btn-transition ${
+                  filters.uncategorized_only
+                    ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                }`}
+              >
+                <Lightbulb size={14} />
+                Без категории
+              </button>
+              {filters.uncategorized_only && transactions.some((tx) => !tx.category_id && (tx.note?.trim()?.length ?? 0) >= 2) && (
+                <button
+                  type="button"
+                  onClick={handleAutoAssignCategories}
+                  disabled={autoAssigning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/30 disabled:opacity-50 btn-transition"
+                >
+                  {autoAssigning ? "Назначение…" : "Автоматически по подсказке"}
+                </button>
+              )}
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -524,16 +742,19 @@ export function Transactions() {
               <div>
                 <label className="block text-xs text-zinc-400 mb-1">Категория</label>
                 <select
-                  value={filters.category_id ?? ""}
-                  onChange={(e) =>
+                  value={filters.uncategorized_only ? "uncategorized" : (filters.category_id ?? "")}
+                  onChange={(e) => {
+                    const v = e.target.value;
                     setFilters((f) => ({
                       ...f,
-                      category_id: e.target.value ? +e.target.value : null,
-                    }))
-                  }
+                      uncategorized_only: v === "uncategorized",
+                      category_id: v && v !== "uncategorized" ? +v : null,
+                    }));
+                  }}
                   className="w-full px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white text-sm form-transition"
                 >
                   <option value="">Все</option>
+                  <option value="uncategorized">Без категории</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -809,7 +1030,22 @@ export function Transactions() {
                       {tx.category_name}
                     </span>
                   ) : (
-                    <span className="text-zinc-400">—</span>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const v = e.target.value ? +e.target.value : 0;
+                        if (v) handleQuickAssignCategory(tx, v);
+                      }}
+                      disabled={assigningCategoryId === tx.id}
+                      className="min-w-[120px] px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+                    >
+                      <option value="">Выберите категорию</option>
+                      {(tx.transaction_type === "income" ? incomeCategories : expenseCategories).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
                   )}
                 </td>
                 <td
@@ -844,6 +1080,19 @@ export function Transactions() {
           </tbody>
         </table>
       </div>
+
+      {!loading && hasMore && transactions.length > 0 && (
+        <div className="flex justify-center py-4">
+          <button
+            type="button"
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700 btn-transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loadingMore ? "Загрузка…" : "Показать ещё"}
+          </button>
+        </div>
+      )}
 
       {!loading && transactions.length === 0 && !showForm && (
         <EmptyState
