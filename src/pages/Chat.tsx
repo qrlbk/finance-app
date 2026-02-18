@@ -1,16 +1,11 @@
 import { useState, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { MessageCircle, Send, Bot, User } from "lucide-react";
 import { api } from "../lib/api";
 import { useToast } from "../components/ui/Toast";
+import { formatCurrency } from "../lib/format";
 
-const SYSTEM_PROMPT =
-  "Ты дружелюбный помощник в приложении «Финансы». Отвечай на русском на основе данных пользователя: баланс, доходы и расходы за месяц, бюджеты по категориям. Если пользователь спрашивает о бюджете или финансах — используй только переданные данные.";
-
-function formatAmount(n: number) {
-  return new Intl.NumberFormat("ru-KZ", { maximumFractionDigits: 0 }).format(n);
-}
-
-async function buildChatContext(): Promise<string> {
+async function buildChatContext(formatAmountFn: (n: number) => string): Promise<string> {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
@@ -18,7 +13,7 @@ async function buildChatContext(): Promise<string> {
   try {
     const summary = await api.getSummary();
     parts.push(
-      `Баланс: ${formatAmount(summary.total_balance)} ${summary.base_currency ?? "KZT"}. Доход за текущий месяц: ${formatAmount(summary.income_month)}. Расход за текущий месяц: ${formatAmount(summary.expense_month)}.`
+      `Баланс: ${formatAmountFn(summary.total_balance)} ${summary.base_currency ?? "KZT"}. Доход за текущий месяц: ${formatAmountFn(summary.income_month)}. Расход за текущий месяц: ${formatAmountFn(summary.expense_month)}.`
     );
     if (summary.currencies.length > 0) {
       parts.push(`Валюты в приложении: ${summary.currencies.join(", ")}.`);
@@ -31,7 +26,7 @@ async function buildChatContext(): Promise<string> {
     if (budgets.length > 0) {
       const budgetLines = budgets.map(
         (b) =>
-          `Бюджет «${b.category_name}» (${b.period}): лимит ${formatAmount(b.amount)} ₸, потрачено ${formatAmount(b.spent)} ₸, осталось ${formatAmount(b.remaining)} ₸ (использовано ${Math.round(b.percent_used)}%).`
+          `Бюджет «${b.category_name}» (${b.period}): лимит ${formatAmountFn(b.amount)} ₸, потрачено ${formatAmountFn(b.spent)} ₸, осталось ${formatAmountFn(b.remaining)} ₸ (использовано ${Math.round(b.percent_used)}%).`
       );
       parts.push("Бюджеты по категориям: " + budgetLines.join(" "));
     }
@@ -52,7 +47,7 @@ async function buildChatContext(): Promise<string> {
   try {
     const byCategory = await api.getExpenseByCategory({ year, month });
     if (byCategory.length > 0) {
-      const lines = byCategory.map((c) => `${c.category_name}: ${formatAmount(c.total)} ₸`).join(", ");
+      const lines = byCategory.map((c) => `${c.category_name}: ${formatAmountFn(c.total)} ₸`).join(", ");
       parts.push(`Расходы по категориям за текущий месяц: ${lines}.`);
     }
   } catch {
@@ -70,6 +65,7 @@ const TYPING_INTERVAL_MS = 22;
 const TYPING_CHUNK_SIZE = 1;
 
 export function Chat() {
+  const { t } = useTranslation();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -114,18 +110,18 @@ export function Chat() {
     const text = input.trim();
     if (!text || loading) return;
     if (!llmEnabled && !useEmbedded) {
-      showToast("Включите LLM в Настройках: «Подсказки категорий» → «Встроенная модель» или «Ollama вручную».", "info");
+      showToast(t("chat.enableLLM"), "info");
       return;
     }
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setLoading(true);
     try {
-      const context = await buildChatContext();
+      const context = await buildChatContext((n) => formatCurrency(n));
       api.startOllamaServer();
       await new Promise((r) => setTimeout(r, 1500));
       const reply = await api.chatMessage(text, {
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt: t("chat.systemPrompt"),
         context: context || undefined,
         useEmbedded: useEmbedded || undefined,
         ollamaUrl: !useEmbedded && llmEnabled ? ollamaUrl ?? undefined : undefined,
@@ -136,8 +132,8 @@ export function Chat() {
       setTypingBuffer(fullText);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      showToast(`Ошибка: ${msg}. Запустите Ollama и нажмите «Проверить» в Настройках.`, "error");
-      setMessages((prev) => [...prev, { role: "assistant", content: `Ошибка: ${msg}` }]);
+      showToast(t("chat.ollamaError", { msg }), "error");
+      setMessages((prev) => [...prev, { role: "assistant", content: `${t("chat.errorPrefix")}: ${msg}` }]);
     } finally {
       setLoading(false);
     }
@@ -147,15 +143,15 @@ export function Chat() {
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <MessageCircle className="text-emerald-500" size={24} />
-        <h3 className="text-lg font-medium">Чат</h3>
+        <h3 className="text-lg font-medium">{t("nav.chat")}</h3>
       </div>
       <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/50 flex flex-col min-h-[400px]">
         <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-[320px]">
           {messages.length === 0 && (
             <div className="text-center text-zinc-500 dark:text-zinc-400 py-8">
               <Bot size={40} className="mx-auto mb-2 opacity-60" />
-              <p>Напишите сообщение — ответит модель Ollama.</p>
-              <p className="text-sm mt-1">У ассистента есть доступ к вашему балансу, бюджетам и расходам — можно спросить: «Расскажи о моём бюджете».</p>
+              <p>{t("chat.welcomeLine1")}</p>
+              <p className="text-sm mt-1">{t("chat.welcomeLine2")}</p>
             </div>
           )}
           {messages.map((m, i) => {
@@ -217,7 +213,7 @@ export function Chat() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Напишите сообщение..."
+              placeholder={t("chat.placeholder")}
               className="flex-1 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
               disabled={loading}
             />
@@ -227,7 +223,7 @@ export function Chat() {
               className="rounded-lg bg-emerald-600 text-white px-4 py-2.5 flex items-center gap-2 hover:bg-emerald-500 disabled:opacity-50 disabled:pointer-events-none"
             >
               <Send size={18} />
-              Отправить
+              {t("chat.send")}
             </button>
           </form>
         </div>

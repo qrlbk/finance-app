@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { AlertTriangle, Info } from "lucide-react";
 
 interface ConfirmDialogProps {
@@ -18,16 +19,20 @@ export function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = "Подтвердить",
-  cancelLabel = "Отмена",
+  confirmLabel,
+  cancelLabel,
   variant = "default",
   loading = false,
-  loadingConfirmLabel = "Загрузка…",
+  loadingConfirmLabel,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation();
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const confirmLabelResolved = confirmLabel ?? t("confirmDialog.confirm");
+  const cancelLabelResolved = cancelLabel ?? t("confirmDialog.cancel");
+  const loadingConfirmLabelResolved = loadingConfirmLabel ?? t("confirmDialog.loading");
 
   // Focus confirm button when dialog opens
   useEffect(() => {
@@ -94,7 +99,7 @@ export function ConfirmDialog({
             onClick={onCancel}
             className="px-4 py-2.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 btn-transition focus:outline-none focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
           >
-            {cancelLabel}
+            {cancelLabelResolved}
           </button>
           <button
             ref={confirmButtonRef}
@@ -103,7 +108,7 @@ export function ConfirmDialog({
             disabled={loading}
             className={`px-4 py-2.5 rounded-lg btn-transition focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-zinc-900 disabled:opacity-50 disabled:cursor-not-allowed ${confirmClass}`}
           >
-            {loading ? loadingConfirmLabel : confirmLabel}
+            {loading ? loadingConfirmLabelResolved : confirmLabelResolved}
           </button>
         </div>
       </div>

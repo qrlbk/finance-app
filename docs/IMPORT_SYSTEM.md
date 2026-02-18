@@ -1,97 +1,105 @@
-# Профессиональная система импорта
+# Import System — Design Document
 
-## Цели
-
-- Импорт из CSV/JSON/Excel с предсказуемым результатом и понятными ошибками.
-- Поддержка «чужих» файлов: маппинг колонок, выбор счёта по умолчанию, формат даты.
-- Защита от дубликатов и валидация до записи в БД (превью + отчёт).
+Professional import pipeline for CSV, JSON, and Excel with predictable results and clear error reporting.
 
 ---
 
-## 1. Источники и форматы
+## Goals
 
-| Формат | Сценарий | Маппинг |
-|--------|----------|--------|
-| **JSON** | Экспорт из этого приложения | Фиксированная структура `ExportData`, без маппинга. |
-| **CSV** | Экспорт из приложения или внешний (банк, таблица) | Заголовки: поддержка EN/RU (Date/Дата, Amount/Сумма, Account/Счёт, Category/Категория, Type/Тип, Note/Заметка). Опционально: маппинг колонок с фронта. |
-| **XLSX** | Экспорт из приложения или Excel | Первый лист, фиксированный порядок колонок (как сейчас) или по первой строке (заголовки). |
+- **Predictable outcome** — Import from CSV/JSON/Excel with consistent behavior and understandable errors.
+- **External files** — Support “foreign” files via column mapping, default account, and date format options.
+- **Safety** — Duplicate detection and validation before writing to the database (preview + report).
 
 ---
 
-## 2. Этапы импорта (UX)
+## 1. Sources and formats
 
-1. **Выбор файла** — пользователь выбирает CSV / JSON / XLSX.
-2. **Превью (для CSV/XLSX)** — показать первые 10–20 строк и список колонок; для CSV — предложить соответствие полям (Дата, Сумма, Счёт, Категория, Тип, Заметка).
-3. **Настройки импорта**:
-   - **Счёт по умолчанию** — если в файле нет колонки «Счёт» или значение не найдено, использовать этот счёт.
-   - **Пропуск дубликатов** — считать дубликатом пару (дата, сумма, заметка) в рамках одного счёта; при включении такие строки не вставлять, а учитывать в отчёте (skipped_duplicates).
-   - **Формат даты (CSV)** — авто (YYYY-MM-DD, DD.MM.YYYY, DD/MM/YYYY) или явный выбор.
-4. **Запуск импорта** — прогресс (для больших файлов), затем итог.
-5. **Отчёт** — импортировано / пропущено дубликатов / ошибки (номера строк и текст).
+| Format | Scenario | Mapping |
+|--------|----------|---------|
+| **JSON** | Export from this app | Fixed `ExportData` structure; no mapping. |
+| **CSV** | App export or external (bank, spreadsheet) | Headers: EN/RU supported (Date/Дата, Amount/Сумма, Account/Счёт, Category/Категория, Type/Тип, Note/Заметка). Optional: column mapping from UI. |
+| **XLSX** | App export or Excel | First sheet; fixed column order or first-row headers. |
 
 ---
 
-## 3. API (бэкенд)
+## 2. Import flow (UX)
 
-### 3.1 Превью (без записи в БД)
+1. **File selection** — User picks CSV / JSON / XLSX.
+2. **Preview (CSV/XLSX)** — Show first 10–20 rows and column list; for CSV, suggest mapping to fields (Date, Amount, Account, Category, Type, Note).
+3. **Import settings**
+   - **Default account** — Used when the file has no Account column or value is not found.
+   - **Skip duplicates** — Duplicate = same (date, amount, note) per account; when enabled, skip and count in report (`duplicates_skipped`).
+   - **Date format (CSV)** — Auto (YYYY-MM-DD, DD.MM.YYYY, DD/MM/YYYY) or explicit.
+4. **Run import** — Progress for large files, then summary.
+5. **Report** — Imported count, skipped duplicates, errors (row numbers and messages).
+
+---
+
+## 3. API (backend)
+
+### 3.1 Preview (no DB write)
 
 - **`import_preview(path, format)`**
-  - **CSV**: прочитать заголовок + первые 15 строк; вернуть `{ headers: string[], rows: string[][] }`. По заголовкам можно предложить маппинг на фронте.
-  - **JSON**: вернуть `{ format: "json", transaction_count: number }` (без полного парсинга тела).
-  - **XLSX**: первый лист, первая строка = заголовки, следующие 15 строк; то же `{ headers, rows }`.
+  - **CSV:** Read header + first 15 rows; return `{ headers: string[], rows: string[][] }`. UI can suggest mapping from headers.
+  - **JSON:** Return `{ format: "json", transaction_count: number }` without full parse.
+  - **XLSX:** First sheet, first row = headers, next 15 rows; same `{ headers, rows }`.
 
-### 3.2 Импорт с опциями
+### 3.2 Import with options
 
-- **`import_data(input)`** — расширить вход:
-  - `path`, `format` (как сейчас).
-  - **Опции**:
-    - `default_account_id: number | null` — счёт по умолчанию, если в строке счёт не указан или не найден.
-    - `skip_duplicates: boolean` — не вставлять дубликаты (дата + сумма + заметка + счёт).
-    - `date_format: "auto" | "iso" | "dmy" | "mdy"` — для CSV (опционально).
+- **`import_data(input)`** — Extended input:
+  - `path`, `format` (as now).
+  - **Options:**
+    - `default_account_id: number | null` — Used when row has no account or account not found.
+    - `skip_duplicates: boolean` — Do not insert duplicates (date + amount + note + account).
+    - `date_format: "auto" | "iso" | "dmy" | "mdy"` — For CSV (optional).
 
-- **Результат** (расширить `ImportResult`):
+- **Result** (extend `ImportResult`):
   - `transactions_imported: number`
   - `duplicates_skipped: number`
-  - `accounts_imported`, `categories_imported` (для совместимости)
-  - `errors: string[]` — сообщения с номерами строк
-  - `total_parsed: number` — всего обработано строк (для контекста)
+  - `accounts_imported`, `categories_imported` (for compatibility)
+  - `errors: string[]` — Messages with row numbers
+  - `total_parsed: number` — Total rows processed
 
 ---
 
-## 4. Дубликаты
+## 4. Duplicates
 
-- Ключ дубликата: `(account_id, date, amount, note)`.
-- При `skip_duplicates: true` перед вставкой проверять наличие такой записи (например, запросом по `user_id`, `account_id`, `date`, `amount`, `note`). Если есть — не вставлять, увеличить `duplicates_skipped`.
-
----
-
-## 5. CSV: гибкие заголовки
-
-- Поддержать синонимы (первое совпадение по заголовку):
-  - Дата: `Date`, `Дата`, `date`, `дата`
-  - Сумма: `Amount`, `Сумма`, `amount`, `сумма`
-  - Счёт: `Account`, `Счёт`, `account`, `счёт`
-  - Категория: `Category`, `Категория`, `category`, `категория`
-  - Тип: `Type`, `Тип`, `type`, `тип`
-  - Заметка: `Note`, `Заметка`, `Note`, `note`, `заметка`, `Описание`, `Description`
-- Если заголовок не совпадает — можно в будущем принимать маппинг с фронта (индекс колонки → поле).
+- **Key:** `(account_id, date, amount, note)`.
+- When `skip_duplicates: true`, before insert check for existing row (e.g. by `user_id`, `account_id`, `date`, `amount`, `note`). If exists, do not insert and increment `duplicates_skipped`.
 
 ---
 
-## 6. Валидация и ошибки
+## 5. CSV: flexible headers
 
-- Для каждой строки: дата (парсинг), сумма (число), счёт (найден или default), тип (income/expense или по знаку суммы).
-- Ошибки не останавливают импорт: накапливать в `errors`, продолжать. В конце вернуть полный отчёт.
-- Нумерация строк в отчёте: 1-based, с учётом заголовка CSV (строка 2 = первая строка данных).
+Support synonyms (first match by header):
+
+| Field   | Synonyms (examples) |
+|--------|----------------------|
+| Date   | `Date`, `Дата`, `date`, `дата` |
+| Amount | `Amount`, `Сумма`, `amount`, `сумма` |
+| Account| `Account`, `Счёт`, `account`, `счёт` |
+| Category | `Category`, `Категория`, `category`, `категория` |
+| Type  | `Type`, `Тип`, `type`, `тип` |
+| Note  | `Note`, `Заметка`, `Note`, `note`, `заметка`, `Описание`, `Description` |
+
+Future: accept explicit column index → field mapping from UI.
 
 ---
 
-## 7. Порядок внедрения
+## 6. Validation and errors
 
-1. **Расширить результат импорта**: `duplicates_skipped`, `total_parsed`; логика пропуска дубликатов в `import_csv`/`import_json`/`import_xlsx`.
-2. **Опции импорта**: `default_account_id`, `skip_duplicates` в команде `import_data` и передача в функции импорта.
-3. **CSV**: гибкие заголовки (EN/RU синонимы), парсинг даты (auto/iso/dmy/mdy).
-4. **Команда `import_preview`** для CSV и XLSX.
-5. **Фронт**: шаг «Настройки» (счёт по умолчанию, галочка «Пропускать дубликаты»), вызов превью, отображение отчёта (импортировано / пропущено / ошибки).
+- Per row: valid date (parsed), valid amount (number), account (found or default), type (income/expense or from amount sign).
+- Errors do not stop import: collect in `errors`, continue. Return full report at the end.
+- Row numbers in report: 1-based; for CSV, row 2 = first data row.
 
-После этого систему можно развивать: маппинг колонок с UI, поддержка других форматов (OFX/QIF), импорт категорий из файла.
+---
+
+## 7. Implementation order
+
+1. **Extend result:** `duplicates_skipped`, `total_parsed`; skip logic in `import_csv` / `import_json` / `import_xlsx`.
+2. **Import options:** `default_account_id`, `skip_duplicates` in `import_data` and pass into import functions.
+3. **CSV:** Flexible headers (EN/RU synonyms), date parsing (auto/iso/dmy/mdy).
+4. **`import_preview`** for CSV and XLSX.
+5. **Frontend:** Settings step (default account, “Skip duplicates”), call preview, show report (imported / skipped / errors).
+
+Later: UI column mapping, other formats (e.g. OFX/QIF), category import from file.

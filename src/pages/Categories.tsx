@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Plus, Pencil, Trash2, Tag, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
 import { api, type Category } from "../lib/api";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
@@ -12,6 +13,7 @@ const PRESET_COLORS = [
 ];
 
 export function Categories() {
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,7 +73,7 @@ export function Categories() {
           color: form.color,
           icon: form.icon,
         });
-        showToast("Категория обновлена", "success");
+        showToast(t("categories.updated"), "success");
       } else {
         await api.createCategory({
           name: form.name.trim(),
@@ -80,13 +82,13 @@ export function Categories() {
           icon: form.icon,
           parent_id: form.parent_id,
         });
-        showToast("Категория создана", "success");
+        showToast(t("categories.created"), "success");
       }
       resetForm();
       loadData();
     } catch (e) {
       setError(String(e));
-      showToast("Ошибка при сохранении", "error");
+      showToast(t("categories.errorSave"), "error");
     }
   };
 
@@ -120,7 +122,7 @@ export function Categories() {
       await api.deleteCategory(deleteConfirmId);
       setDeleteConfirmId(null);
       loadData();
-      showToast("Категория удалена", "success");
+      showToast(t("categories.deleted"), "success");
     } catch (e) {
       setError(String(e));
       showToast(String(e), "error");
@@ -164,7 +166,7 @@ export function Categories() {
       )}
 
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-medium">Категории</h3>
+        <h3 className="text-lg font-medium">{t("categories.pageTitle")}</h3>
         <button
           onClick={() => {
             setShowForm(true);
@@ -180,7 +182,7 @@ export function Categories() {
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
         >
           <Plus size={18} />
-          Добавить
+          {t("common.add")}
         </button>
       </div>
 
@@ -191,13 +193,13 @@ export function Categories() {
           className="p-6 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm dark:shadow-none space-y-4 animate-slide-down"
         >
           <h4 className="font-medium">
-            {editingId ? "Редактировать категорию" : "Новая категория"}
+            {editingId ? t("categories.editCategory") : t("categories.newCategory")}
           </h4>
 
           <div className="grid gap-4 sm:grid-cols-2">
             {!editingId && (
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">Тип</label>
+                <label className="block text-sm text-zinc-400 mb-1">{t("categories.type")}</label>
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -208,7 +210,7 @@ export function Categories() {
                         : "bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400"
                     }`}
                   >
-                    Расход
+                    {t("reports.expense")}
                   </button>
                   <button
                     type="button"
@@ -219,7 +221,7 @@ export function Categories() {
                         : "bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400"
                     }`}
                   >
-                    Доход
+                    {t("reports.income")}
                   </button>
                 </div>
               </div>
@@ -227,13 +229,13 @@ export function Categories() {
 
             {!editingId && (
               <div>
-                <label className="block text-sm text-zinc-400 mb-1">Родительская категория</label>
+                <label className="block text-sm text-zinc-400 mb-1">{t("categories.parentCategory")}</label>
                 <select
                   value={form.parent_id ?? ""}
                   onChange={(e) => setForm((f) => ({ ...f, parent_id: e.target.value ? Number(e.target.value) : null }))}
                   className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white form-transition focus:ring-2 focus:ring-emerald-500"
                 >
-                  <option value="">— Нет (корневая) —</option>
+                  <option value="">{t("categories.noParent")}</option>
                   {(form.category_type === "income" ? incomeCategories : expenseCategories)
                     .filter((c) => !c.parent_id)
                     .map((c) => (
@@ -246,20 +248,20 @@ export function Categories() {
             )}
 
             <div className={editingId ? "sm:col-span-2" : ""}>
-              <label className="block text-sm text-zinc-400 mb-1">Название</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("categories.name")}</label>
               <input
                 type="text"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white form-transition focus:ring-2 focus:ring-emerald-500"
-                placeholder="Название категории"
+                placeholder={t("categories.placeholderName")}
                 required
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm text-zinc-400 mb-2">Цвет</label>
+            <label className="block text-sm text-zinc-400 mb-2">{t("categories.color")}</label>
             <div className="flex flex-wrap gap-2">
               {PRESET_COLORS.map((color) => (
                 <button
@@ -277,7 +279,7 @@ export function Categories() {
                 value={form.color}
                 onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
                 className="w-8 h-8 rounded-lg cursor-pointer"
-                title="Выбрать другой цвет"
+                title={t("categories.pickColor")}
               />
             </div>
           </div>
@@ -287,14 +289,14 @@ export function Categories() {
               type="submit"
               className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
             >
-              {editingId ? "Сохранить" : "Добавить"}
+              {editingId ? t("common.save") : t("common.add")}
             </button>
             <button
               type="button"
               onClick={resetForm}
               className="px-4 py-2 rounded-lg bg-zinc-600 text-white hover:bg-zinc-500 btn-transition"
             >
-              Отмена
+              {t("common.cancel")}
             </button>
           </div>
         </form>
@@ -305,7 +307,7 @@ export function Categories() {
         <div className="flex items-center gap-2">
           <ArrowDownCircle size={18} className="text-red-500" />
           <h4 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-            Расходы ({expenseCategories.length})
+            {t("categories.expensesCount", { count: expenseCategories.length })}
           </h4>
         </div>
         {loading ? (
@@ -326,7 +328,7 @@ export function Categories() {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-zinc-400">Нет категорий расходов</p>
+          <p className="text-sm text-zinc-400">{t("categories.noExpenseCategories")}</p>
         )}
       </div>
 
@@ -335,7 +337,7 @@ export function Categories() {
         <div className="flex items-center gap-2">
           <ArrowUpCircle size={18} className="text-emerald-500" />
           <h4 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
-            Доходы ({incomeCategories.length})
+            {t("categories.incomeCount", { count: incomeCategories.length })}
           </h4>
         </div>
         {loading ? (
@@ -356,15 +358,15 @@ export function Categories() {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-zinc-400">Нет категорий доходов</p>
+          <p className="text-sm text-zinc-400">{t("categories.noIncomeCategories")}</p>
         )}
       </div>
 
       {!loading && categories.length === 0 && !showForm && (
         <EmptyState
           icon={Tag}
-          title="Нет категорий"
-          description="Создайте категории для классификации ваших доходов и расходов."
+          title={t("categories.emptyTitle")}
+          description={t("categories.emptyDesc")}
           action={
             <button
               onClick={() => {
@@ -374,7 +376,7 @@ export function Categories() {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
             >
               <Plus size={18} />
-              Добавить категорию
+              {t("common.add")} {t("nav.categories").toLowerCase()}
             </button>
           }
         />
@@ -382,9 +384,9 @@ export function Categories() {
 
       <ConfirmDialog
         open={deleteConfirmId !== null}
-        title="Удалить категорию?"
-        message="Категорию можно удалить только если она не используется в транзакциях или бюджетах."
-        confirmLabel="Удалить"
+        title={t("categories.deleteConfirmTitle")}
+        message={t("categories.deleteConfirmMessage")}
+        confirmLabel={t("common.delete")}
         variant="danger"
         onConfirm={handleDeleteConfirm}
         onCancel={() => setDeleteConfirmId(null)}

@@ -1,43 +1,45 @@
 import { useEffect, useState, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { api, type Summary, type BudgetAlert } from "../../lib/api";
 import { useToast } from "../ui/Toast";
 
-const pageTitles: Record<string, string> = {
-  "/": "Главная",
-  "/transactions": "Транзакции",
-  "/transfers": "Переводы",
-  "/import": "Импорт выписки",
-  "/accounts": "Счета",
-  "/recurring": "Автоплатежи",
-  "/categories": "Категории",
-  "/insights": "Аналитика",
-  "/reports": "Отчёты",
-  "/chat": "Чат",
-  "/settings": "Настройки",
+const pathToTitleKey: Record<string, string> = {
+  "/": "nav.dashboard",
+  "/transactions": "nav.transactions",
+  "/transfers": "nav.transfers",
+  "/import": "nav.import",
+  "/accounts": "nav.accounts",
+  "/recurring": "nav.recurring",
+  "/categories": "nav.categories",
+  "/insights": "nav.insights",
+  "/reports": "nav.reports",
+  "/chat": "nav.chat",
+  "/settings": "nav.settings",
 };
 
 export function Layout() {
+  const { t } = useTranslation();
   const { pathname } = useLocation();
-  const title = pageTitles[pathname] ?? "Финансы";
+  const titleKey = pathToTitleKey[pathname] ?? "nav.appName";
+  const title = t(titleKey);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [budgetAlerts, setBudgetAlerts] = useState<BudgetAlert[]>([]);
   const recurringProcessedRef = useRef(false);
   const { showToast } = useToast();
 
-  // Run recurring payments once on app load (non-blocking)
   useEffect(() => {
     if (recurringProcessedRef.current) return;
     recurringProcessedRef.current = true;
     api.processRecurringPayments().then((created) => {
       if (created.length > 0) {
-        showToast(`Проведено автоплатежей: ${created.length}`, "success");
+        showToast(t("layout.recurringProcessed", { count: created.length }), "success");
       }
     }).catch(() => { /* ignore */ });
-  }, [showToast]);
+  }, [showToast, t]);
 
   useEffect(() => {
     const loadSummary = async () => {
@@ -52,7 +54,6 @@ export function Layout() {
     };
     loadSummary();
 
-    // Refresh summary when navigating to dashboard or after transactions
     const interval = setInterval(loadSummary, 30000);
     return () => clearInterval(interval);
   }, [pathname]);
@@ -63,10 +64,8 @@ export function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
-      {/* Fixed Sidebar */}
       <Sidebar totalBalance={summary?.total_balance} currencies={summary?.currencies ?? []} />
       
-      {/* Scrollable Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         <Header 
           title={title} 

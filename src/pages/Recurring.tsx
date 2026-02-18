@@ -1,36 +1,30 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Plus, Pencil, Trash2, Play, Pause, RefreshCw, Calendar, Repeat } from "lucide-react";
 import { api, type RecurringPayment, type Account, type Category } from "../lib/api";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { EmptyState } from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
-
-function formatAmount(amount: number, type: string) {
-  const formatted = new Intl.NumberFormat("ru-KZ", {
-    style: "decimal",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-  return type === "income" ? `+${formatted}` : `-${formatted}`;
-}
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr + "T12:00:00").toLocaleDateString("ru-KZ", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
-const frequencyLabels: Record<string, string> = {
-  daily: "Ежедневно",
-  weekly: "Еженедельно",
-  monthly: "Ежемесячно",
-  yearly: "Ежегодно",
-};
+import { formatCurrency, formatDate } from "../lib/format";
 
 export function Recurring() {
+  const { t } = useTranslation();
   const { showToast } = useToast();
+  const frequencyLabels: Record<string, string> = {
+    daily: t("recurring.daily"),
+    weekly: t("recurring.weekly"),
+    monthly: t("recurring.monthly"),
+    yearly: t("recurring.yearly"),
+  };
+
+  function formatAmount(amount: number, type: string) {
+    const formatted = formatCurrency(amount);
+    return type === "income" ? `+${formatted}` : `-${formatted}`;
+  }
+
+  function formatDateDisplay(dateStr: string) {
+    return formatDate(new Date(dateStr + "T12:00:00"));
+  }
   const [payments, setPayments] = useState<RecurringPayment[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -87,11 +81,11 @@ export function Recurring() {
     e.preventDefault();
     const amount = parseFloat(form.amount);
     if (isNaN(amount) || amount <= 0) {
-      showToast("Введите положительную сумму", "error");
+      showToast(t("recurring.enterAmount"), "error");
       return;
     }
     if (!form.account_id || !accounts.some((a) => a.id === form.account_id)) {
-      showToast("Выберите счёт", "error");
+      showToast(t("recurring.selectAccount"), "error");
       return;
     }
 
@@ -109,7 +103,7 @@ export function Recurring() {
           note: form.note || null,
           is_active: form.is_active,
         });
-        showToast("Платёж обновлён", "success");
+        showToast(t("recurring.updated"), "success");
       } else {
         await api.createRecurring({
           account_id: form.account_id,
@@ -121,13 +115,13 @@ export function Recurring() {
           end_date: form.end_date || null,
           note: form.note || null,
         });
-        showToast("Платёж создан", "success");
+        showToast(t("recurring.created"), "success");
       }
       resetForm();
       loadData();
     } catch (e) {
       setError(String(e));
-      showToast("Ошибка при сохранении", "error");
+      showToast(t("recurring.errorSave"), "error");
     }
   };
 
@@ -177,10 +171,10 @@ export function Recurring() {
         note: p.note,
         is_active: !p.is_active,
       });
-      showToast(p.is_active ? "Платёж приостановлен" : "Платёж активирован", "success");
+      showToast(p.is_active ? t("recurring.paused") : t("recurring.activated"), "success");
       loadData();
     } catch (e) {
-      showToast("Ошибка", "error");
+      showToast(t("recurring.error"), "error");
     }
   };
 
@@ -190,10 +184,10 @@ export function Recurring() {
       await api.deleteRecurring(deleteConfirmId);
       setDeleteConfirmId(null);
       loadData();
-      showToast("Платёж удалён", "success");
+      showToast(t("recurring.deleted"), "success");
     } catch (e) {
       setError(String(e));
-      showToast("Ошибка при удалении", "error");
+      showToast(t("recurring.errorDelete"), "error");
     }
   };
 
@@ -202,13 +196,13 @@ export function Recurring() {
       setProcessing(true);
       const created = await api.processRecurringPayments();
       if (created.length > 0) {
-        showToast(`Создано транзакций: ${created.length}`, "success");
+        showToast(t("recurring.createdCount", { count: created.length }), "success");
       } else {
-        showToast("Нет платежей для обработки", "info");
+        showToast(t("recurring.nothingToProcess"), "info");
       }
       loadData();
     } catch (e) {
-      showToast("Ошибка обработки", "error");
+      showToast(t("recurring.errorProcess"), "error");
     } finally {
       setProcessing(false);
     }
@@ -226,7 +220,7 @@ export function Recurring() {
       )}
 
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-medium">Повторяющиеся платежи</h3>
+        <h3 className="text-lg font-medium">{t("recurring.pageTitle")}</h3>
         <div className="flex gap-2">
           <button
             onClick={handleProcessPayments}
@@ -234,7 +228,7 @@ export function Recurring() {
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-600 text-white hover:bg-zinc-500 btn-transition disabled:opacity-50"
           >
             <RefreshCw size={18} className={processing ? "animate-spin" : ""} />
-            <span className="hidden sm:inline">Обработать</span>
+            <span className="hidden sm:inline">{t("recurring.process")}</span>
           </button>
           <button
             type="button"
@@ -257,13 +251,13 @@ export function Recurring() {
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition disabled:opacity-50 disabled:pointer-events-none"
           >
             <Plus size={18} />
-            Добавить
+            {t("common.add")}
           </button>
         </div>
       </div>
       {accounts.length === 0 && !loading && (
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Сначала добавьте счёт в разделе «Счета».
+          {t("recurring.addAccountFirst")}
         </p>
       )}
 
@@ -274,12 +268,12 @@ export function Recurring() {
           className="p-6 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm dark:shadow-none space-y-4 animate-slide-down"
         >
           <h4 className="font-medium">
-            {editingId ? "Редактировать платёж" : "Новый повторяющийся платёж"}
+            {editingId ? t("recurring.editPayment") : t("recurring.newPayment")}
           </h4>
           
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Тип</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("recurring.type")}</label>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -290,7 +284,7 @@ export function Recurring() {
                       : "bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400"
                   }`}
                 >
-                  Расход
+                  {t("reports.expense")}
                 </button>
                 <button
                   type="button"
@@ -301,13 +295,13 @@ export function Recurring() {
                       : "bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400"
                   }`}
                 >
-                  Доход
+                  {t("reports.income")}
                 </button>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Счёт</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("recurring.account")}</label>
               <select
                 value={form.account_id}
                 onChange={(e) => setForm((f) => ({ ...f, account_id: +e.target.value }))}
@@ -321,13 +315,13 @@ export function Recurring() {
             </div>
 
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Категория</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("recurring.category")}</label>
               <select
                 value={form.category_id ?? ""}
                 onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value ? +e.target.value : null }))}
                 className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white form-transition focus:ring-2 focus:ring-emerald-500"
               >
-                <option value="">Без категории</option>
+                <option value="">{t("recurring.noCategory")}</option>
                 {formCategories.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
@@ -335,7 +329,7 @@ export function Recurring() {
             </div>
 
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Сумма</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("recurring.amount")}</label>
               <input
                 type="number"
                 step="0.01"
@@ -349,21 +343,21 @@ export function Recurring() {
             </div>
 
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Частота</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("recurring.frequency")}</label>
               <select
                 value={form.frequency}
                 onChange={(e) => setForm((f) => ({ ...f, frequency: e.target.value }))}
                 className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white form-transition focus:ring-2 focus:ring-emerald-500"
               >
-                <option value="daily">Ежедневно</option>
-                <option value="weekly">Еженедельно</option>
-                <option value="monthly">Ежемесячно</option>
-                <option value="yearly">Ежегодно</option>
+                <option value="daily">{t("recurring.daily")}</option>
+                <option value="weekly">{t("recurring.weekly")}</option>
+                <option value="monthly">{t("recurring.monthly")}</option>
+                <option value="yearly">{t("recurring.yearly")}</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Следующая дата</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("recurring.nextDateLabel")}</label>
               <input
                 type="date"
                 value={form.next_date}
@@ -374,7 +368,7 @@ export function Recurring() {
             </div>
 
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Дата окончания (опц.)</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("recurring.endDateOpt")}</label>
               <input
                 type="date"
                 value={form.end_date}
@@ -384,13 +378,13 @@ export function Recurring() {
             </div>
 
             <div className="sm:col-span-2">
-              <label className="block text-sm text-zinc-400 mb-1">Заметка</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("recurring.note")}</label>
               <input
                 type="text"
                 value={form.note}
                 onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
                 className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder-zinc-500 form-transition focus:ring-2 focus:ring-emerald-500"
-                placeholder="Описание платежа"
+                placeholder={t("recurring.placeholderNote")}
               />
             </div>
 
@@ -404,7 +398,7 @@ export function Recurring() {
                   className="w-4 h-4 rounded border-zinc-300 dark:border-zinc-600"
                 />
                 <label htmlFor="is_active" className="text-sm text-zinc-600 dark:text-zinc-300">
-                  Активен
+                  {t("recurring.active")}
                 </label>
               </div>
             )}
@@ -415,14 +409,14 @@ export function Recurring() {
               type="submit"
               className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
             >
-              {editingId ? "Сохранить" : "Добавить"}
+              {editingId ? t("common.save") : t("common.add")}
             </button>
             <button
               type="button"
               onClick={resetForm}
               className="px-4 py-2 rounded-lg bg-zinc-600 text-white hover:bg-zinc-500 btn-transition"
             >
-              Отмена
+              {t("common.cancel")}
             </button>
           </div>
         </form>
@@ -431,7 +425,7 @@ export function Recurring() {
       {/* Active Payments */}
       {activePayments.length > 0 && (
         <div className="space-y-4">
-          <h4 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Активные платежи</h4>
+          <h4 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("recurring.activePayments")}</h4>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {activePayments.map((p) => (
               <div
@@ -449,7 +443,7 @@ export function Recurring() {
                     <button
                       onClick={() => handleToggleActive(p)}
                       className="p-1.5 rounded text-zinc-400 hover:bg-amber-500/20 hover:text-amber-500 btn-transition"
-                      title="Приостановить"
+                      title={t("recurring.pause")}
                     >
                       <Pause size={14} />
                     </button>
@@ -475,12 +469,12 @@ export function Recurring() {
                 </p>
 
                 <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-2">
-                  {p.note || p.category_name || "Без описания"}
+                  {p.note || p.category_name || t("recurring.noDescription")}
                 </p>
 
                 <div className="flex items-center gap-2 text-xs text-zinc-400">
                   <Calendar size={12} />
-                  <span>Следующий: {formatDate(p.next_date)}</span>
+                  <span>{t("recurring.nextDate")}: {formatDateDisplay(p.next_date)}</span>
                 </div>
                 
                 <p className="text-xs text-zinc-400 mt-1">{p.account_name}</p>
@@ -493,7 +487,7 @@ export function Recurring() {
       {/* Inactive Payments */}
       {inactivePayments.length > 0 && (
         <div className="space-y-4">
-          <h4 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Приостановленные</h4>
+          <h4 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("recurring.pausedSection")}</h4>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {inactivePayments.map((p) => (
               <div
@@ -509,7 +503,7 @@ export function Recurring() {
                     <button
                       onClick={() => handleToggleActive(p)}
                       className="p-1.5 rounded text-zinc-400 hover:bg-emerald-500/20 hover:text-emerald-500 btn-transition"
-                      title="Активировать"
+                      title={t("recurring.activate")}
                     >
                       <Play size={14} />
                     </button>
@@ -533,7 +527,7 @@ export function Recurring() {
                 </p>
 
                 <p className="text-sm text-zinc-500 mb-2">
-                  {p.note || p.category_name || "Без описания"}
+                  {p.note || p.category_name || t("recurring.noDescription")}
                 </p>
 
                 <p className="text-xs text-zinc-400">{p.account_name}</p>
@@ -546,8 +540,8 @@ export function Recurring() {
       {!loading && payments.length === 0 && !showForm && (
         <EmptyState
           icon={Repeat}
-          title="Нет повторяющихся платежей"
-          description="Настройте автоматические платежи для подписок, ЖКХ, или регулярного дохода."
+          title={t("recurring.emptyTitle")}
+          description={t("recurring.emptyDesc")}
           action={
             <button
               type="button"
@@ -570,7 +564,7 @@ export function Recurring() {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition disabled:opacity-50 disabled:pointer-events-none"
             >
               <Plus size={18} />
-              Добавить платёж
+              {t("recurring.addPayment")}
             </button>
           }
         />
@@ -590,9 +584,9 @@ export function Recurring() {
 
       <ConfirmDialog
         open={deleteConfirmId !== null}
-        title="Удалить платёж?"
-        message="Эта операция необратима. Уже созданные транзакции не будут удалены."
-        confirmLabel="Удалить"
+        title={t("recurring.deleteConfirmTitle")}
+        message={t("recurring.deleteConfirmMessage")}
+        confirmLabel={t("common.delete")}
         variant="danger"
         onConfirm={handleDeleteConfirm}
         onCancel={() => setDeleteConfirmId(null)}

@@ -1,16 +1,11 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { TrendingUp, TrendingDown, Minus, Lightbulb, PiggyBank, BarChart3, Calendar, ArrowUpRight, ArrowDownRight, Target } from "lucide-react";
 import { api, type SmartInsights, type Insights, type ForecastDetails } from "../lib/api";
-
-function formatAmount(amount: number) {
-  return new Intl.NumberFormat("ru-KZ", {
-    style: "decimal",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
+import { formatCurrency, formatMonthLong } from "../lib/format";
 
 export function InsightsPage() {
+  const { t } = useTranslation();
   const [smartInsights, setSmartInsights] = useState<SmartInsights | null>(null);
   const [basicInsights, setBasicInsights] = useState<Insights | null>(null);
   const [forecastDetails, setForecastDetails] = useState<ForecastDetails | null>(null);
@@ -43,18 +38,18 @@ export function InsightsPage() {
   const getNextMonthName = () => {
     const now = new Date();
     const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    return nextMonth.toLocaleDateString("ru-RU", { month: "long" });
+    return formatMonthLong(nextMonth);
   };
 
   const getCurrentMonthName = () => {
     const now = new Date();
-    return now.toLocaleDateString("ru-RU", { month: "long" });
+    return formatMonthLong(now);
   };
 
   if (loading) {
     return (
       <div className="space-y-6">
-        <h3 className="text-lg font-medium">Аналитика</h3>
+        <h3 className="text-lg font-medium">{t("insights.title")}</h3>
         <div className="grid gap-4 md:grid-cols-2">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="p-5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/50">
@@ -80,7 +75,7 @@ export function InsightsPage() {
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium">Аналитика</h3>
+      <h3 className="text-lg font-medium">{t("insights.title")}</h3>
 
       <div className="grid gap-4 md:grid-cols-2">
         {/* Monthly Comparison */}
@@ -90,17 +85,17 @@ export function InsightsPage() {
               <div className="p-2 rounded-lg bg-blue-500/10">
                 <Calendar size={18} className="text-blue-500" />
               </div>
-              <h4 className="font-medium">Сравнение с прошлым месяцем</h4>
+              <h4 className="font-medium">{t("insights.monthComparison")}</h4>
             </div>
 
             <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-zinc-500 dark:text-zinc-400">Расходы ({getCurrentMonthName()})</span>
-                <span className="font-semibold">{formatAmount(smartInsights.monthly_comparison.current_month_total)} ₸</span>
+                <span className="text-zinc-500 dark:text-zinc-400">{t("insights.expensesCurrent", { month: getCurrentMonthName() })}</span>
+                <span className="font-semibold">{formatCurrency(smartInsights.monthly_comparison.current_month_total)} ₸</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500 dark:text-zinc-400">Прошлый месяц</span>
-                <span className="text-zinc-600 dark:text-zinc-300">{formatAmount(smartInsights.monthly_comparison.previous_month_total)} ₸</span>
+                <span className="text-zinc-500 dark:text-zinc-400">{t("insights.previousMonth")}</span>
+                <span className="text-zinc-600 dark:text-zinc-300">{formatCurrency(smartInsights.monthly_comparison.previous_month_total)} ₸</span>
               </div>
               
               <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700">
@@ -109,20 +104,20 @@ export function InsightsPage() {
                     <>
                       <ArrowUpRight size={16} className="text-red-500" />
                       <span className="text-red-500">
-                        +{smartInsights.monthly_comparison.change_percent.toFixed(0)}% к прошлому месяцу
+                        {t("insights.percentVsPrevious", { percent: smartInsights.monthly_comparison.change_percent.toFixed(0) })}
                       </span>
                     </>
                   ) : smartInsights.monthly_comparison.change_percent < 0 ? (
                     <>
                       <ArrowDownRight size={16} className="text-emerald-500" />
                       <span className="text-emerald-500">
-                        {smartInsights.monthly_comparison.change_percent.toFixed(0)}% к прошлому месяцу
+                        {t("insights.percentVsPreviousNeg", { percent: smartInsights.monthly_comparison.change_percent.toFixed(0) })}
                       </span>
                     </>
                   ) : (
                     <>
                       <Minus size={16} className="text-zinc-400" />
-                      <span className="text-zinc-400">Без изменений</span>
+                      <span className="text-zinc-400">{t("insights.noChange")}</span>
                     </>
                   )}
                 </div>
@@ -138,36 +133,36 @@ export function InsightsPage() {
               <div className="p-2 rounded-lg bg-purple-500/10">
                 <BarChart3 size={18} className="text-purple-500" />
               </div>
-              <h4 className="font-medium">Прогноз на {getNextMonthName()}</h4>
+              <h4 className="font-medium">{t("dashboard.forecastFor", { month: getNextMonthName() })}</h4>
             </div>
 
             <div className="space-y-3">
               <div>
-                <span className="text-sm text-zinc-400">Ожидаемые расходы</span>
+                <span className="text-sm text-zinc-400">{t("insights.expectedExpenses")}</span>
                 <p className="text-2xl font-semibold">
-                  ~{formatAmount(basicInsights.forecast.predicted_expense)} ₸
+                  ~{formatCurrency(basicInsights.forecast.predicted_expense)} ₸
                 </p>
               </div>
               <div className="text-sm text-zinc-400">
-                Диапазон: {formatAmount(basicInsights.forecast.confidence_low)} – {formatAmount(basicInsights.forecast.confidence_high)} ₸
+                {t("dashboard.range", { low: formatCurrency(basicInsights.forecast.confidence_low), high: formatCurrency(basicInsights.forecast.confidence_high) })}
               </div>
               <div className="flex items-center gap-2 pt-2 border-t border-zinc-200 dark:border-zinc-700">
                 {basicInsights.forecast.trend === "up" && (
                   <>
                     <TrendingUp size={16} className="text-red-500" />
-                    <span className="text-sm text-red-500">Рост расходов</span>
+                    <span className="text-sm text-red-500">{t("insights.expenseGrowth")}</span>
                   </>
                 )}
                 {basicInsights.forecast.trend === "down" && (
                   <>
                     <TrendingDown size={16} className="text-emerald-500" />
-                    <span className="text-sm text-emerald-500">Снижение расходов</span>
+                    <span className="text-sm text-emerald-500">{t("insights.expenseDecrease")}</span>
                   </>
                 )}
                 {basicInsights.forecast.trend === "stable" && (
                   <>
                     <Minus size={16} className="text-zinc-400" />
-                    <span className="text-sm text-zinc-400">Стабильный уровень</span>
+                    <span className="text-sm text-zinc-400">{t("insights.stableLevel")}</span>
                   </>
                 )}
               </div>
@@ -183,7 +178,7 @@ export function InsightsPage() {
             <div className="p-2 rounded-lg bg-indigo-500/10">
               <Target size={18} className="text-indigo-500" />
             </div>
-            <h4 className="font-medium">Прогноз по категориям на {getNextMonthName()}</h4>
+            <h4 className="font-medium">{t("insights.forecastByCategory", { month: getNextMonthName() })}</h4>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -197,7 +192,7 @@ export function InsightsPage() {
                 >
                   <span className="font-medium text-sm">{cat.category_name}</span>
                   <span className="text-sm text-zinc-600 dark:text-zinc-300">
-                    ~{formatAmount(cat.predicted_expense)} ₸
+                    ~{formatCurrency(cat.predicted_expense)} ₸
                   </span>
                 </div>
               ))}
@@ -205,7 +200,7 @@ export function InsightsPage() {
 
           {forecastDetails.by_category.length > 8 && (
             <p className="text-xs text-zinc-400 mt-3 text-center">
-              Показаны топ 8 категорий из {forecastDetails.by_category.length}
+              {t("insights.topCategories", { count: forecastDetails.by_category.length })}
             </p>
           )}
         </div>
@@ -218,7 +213,7 @@ export function InsightsPage() {
             <div className="p-2 rounded-lg bg-amber-500/10">
               <Lightbulb size={18} className="text-amber-500" />
             </div>
-            <h4 className="font-medium">Рекомендации по экономии</h4>
+            <h4 className="font-medium">{t("insights.savingsRecommendations")}</h4>
           </div>
 
           <div className="space-y-3">
@@ -226,7 +221,7 @@ export function InsightsPage() {
               <div key={i} className="p-4 rounded-lg bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-700">
                 <p className="text-zinc-700 dark:text-zinc-200 mb-2">{suggestion.suggestion}</p>
                 <div className="flex items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400">
-                  <span>Возможная экономия: <strong className="text-emerald-500">{formatAmount(suggestion.potential_savings)} ₸</strong></span>
+                  <span>{t("insights.potentialSavings")}: <strong className="text-emerald-500">{formatCurrency(suggestion.potential_savings)} ₸</strong></span>
                 </div>
               </div>
             ))}
@@ -241,7 +236,7 @@ export function InsightsPage() {
             <div className="p-2 rounded-lg bg-emerald-500/10">
               <PiggyBank size={18} className="text-emerald-500" />
             </div>
-            <h4 className="font-medium">Паттерны расходов</h4>
+            <h4 className="font-medium">{t("insights.spendingPatterns")}</h4>
           </div>
 
           <div className="space-y-3">
@@ -258,7 +253,7 @@ export function InsightsPage() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="font-medium">~{formatAmount(pattern.avg_amount)} ₸</span>
+                  <span className="font-medium">~{formatCurrency(pattern.avg_amount)} ₸</span>
                   <div className="flex items-center gap-1 justify-end">
                     {pattern.trend === "increasing" && (
                       <>
@@ -273,7 +268,7 @@ export function InsightsPage() {
                       </>
                     )}
                     {pattern.trend === "stable" && (
-                      <span className="text-xs text-zinc-400">стабильно</span>
+                      <span className="text-xs text-zinc-400">{t("insights.stable")}</span>
                     )}
                   </div>
                 </div>
@@ -290,7 +285,7 @@ export function InsightsPage() {
             <div className="p-2 rounded-lg bg-red-500/10">
               <TrendingUp size={18} className="text-red-500" />
             </div>
-            <h4 className="font-medium">Необычные траты</h4>
+            <h4 className="font-medium">{t("insights.unusualSpending")}</h4>
           </div>
 
           <ul className="space-y-2">
@@ -313,9 +308,9 @@ export function InsightsPage() {
        (!basicInsights || (!basicInsights.forecast && basicInsights.anomalies.length === 0)) && (
         <div className="text-center py-12">
           <BarChart3 size={48} className="mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
-          <h4 className="text-lg font-medium text-zinc-600 dark:text-zinc-400 mb-2">Недостаточно данных</h4>
+          <h4 className="text-lg font-medium text-zinc-600 dark:text-zinc-400 mb-2">{t("insights.insufficientData")}</h4>
           <p className="text-zinc-400">
-            Добавьте больше транзакций, чтобы увидеть аналитику и рекомендации
+            {t("insights.addMoreData")}
           </p>
         </div>
       )}

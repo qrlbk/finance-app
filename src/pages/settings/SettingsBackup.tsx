@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Download, Upload, Trash2, ExternalLink } from "lucide-react";
 
 interface SettingsBackupProps {
@@ -19,11 +20,12 @@ export function SettingsBackup({
   onResetClick,
   openContainingFolder,
 }: SettingsBackupProps) {
+  const { t } = useTranslation();
   return (
     <div>
-      <h3 className="text-lg font-medium mb-4">Резервная копия</h3>
+      <h3 className="text-lg font-medium mb-4">{t("settings.backup")}</h3>
       <p className="text-sm text-zinc-400 mb-4">
-        Создаёт копию базы данных в папке приложения. Используйте для бэкапа перед обновлениями.
+        {t("settings.backupDesc")}
       </p>
       {error && (
         <div className="p-4 rounded-lg bg-red-500/10 text-red-500 border border-red-500/20 mb-4">
@@ -33,13 +35,13 @@ export function SettingsBackup({
       {backupPath && (
         <div className="p-4 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-4">
           <div className="flex items-center justify-between gap-4">
-            <span className="text-sm break-all">Копия сохранена: {backupPath}</span>
+            <span className="text-sm break-all">{t("settings.backupSaved", { path: backupPath })}</span>
             <button
               onClick={() => openContainingFolder(backupPath)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition text-sm shrink-0"
             >
               <ExternalLink size={14} />
-              Открыть папку
+              {t("common.openFolder")}
             </button>
           </div>
         </div>
@@ -52,7 +54,7 @@ export function SettingsBackup({
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Download size={18} />
-          {backupExporting ? "Создаём…" : "Создать резервную копию"}
+          {backupExporting ? t("settings.creatingBackup") : t("settings.createBackup")}
         </button>
         <button
           type="button"
@@ -60,7 +62,7 @@ export function SettingsBackup({
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-600 text-white hover:bg-zinc-500 transition-colors"
         >
           <Upload size={18} />
-          Восстановить из копии
+          {t("settings.restoreFromBackup")}
         </button>
         <button
           type="button"
@@ -68,7 +70,7 @@ export function SettingsBackup({
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
         >
           <Trash2 size={18} />
-          Сбросить базу данных
+          {t("settings.resetDatabase")}
         </button>
       </div>
     </div>

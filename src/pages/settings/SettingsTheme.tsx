@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Moon, Sun, Monitor } from "lucide-react";
 import type { Theme } from "../../stores/themeStore";
 
@@ -7,9 +8,10 @@ interface SettingsThemeProps {
 }
 
 export function SettingsTheme({ theme, onThemeChange }: SettingsThemeProps) {
+  const { t } = useTranslation();
   return (
     <div>
-      <h3 className="text-lg font-medium mb-4">Тема</h3>
+      <h3 className="text-lg font-medium mb-4">{t("settings.theme")}</h3>
       <div className="flex gap-4">
         <button
           onClick={() => onThemeChange("dark")}
@@ -20,7 +22,7 @@ export function SettingsTheme({ theme, onThemeChange }: SettingsThemeProps) {
           }`}
         >
           <Moon size={20} />
-          Тёмная
+          {t("settings.themeDark")}
         </button>
         <button
           onClick={() => onThemeChange("light")}
@@ -31,7 +33,7 @@ export function SettingsTheme({ theme, onThemeChange }: SettingsThemeProps) {
           }`}
         >
           <Sun size={20} />
-          Светлая
+          {t("settings.themeLight")}
         </button>
         <button
           onClick={() => onThemeChange("system")}
@@ -42,7 +44,7 @@ export function SettingsTheme({ theme, onThemeChange }: SettingsThemeProps) {
           }`}
         >
           <Monitor size={20} />
-          Системная
+          {t("settings.themeSystem")}
         </button>
       </div>
     </div>

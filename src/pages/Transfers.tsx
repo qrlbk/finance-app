@@ -1,26 +1,13 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ArrowRightLeft, Plus } from "lucide-react";
 import { api, type Account, type TransferWithDetails } from "../lib/api";
 import { useToast } from "../components/ui/Toast";
 import { EmptyState } from "../components/ui/EmptyState";
-
-function formatAmount(amount: number) {
-  return new Intl.NumberFormat("ru-KZ", {
-    style: "decimal",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr + "T12:00:00").toLocaleDateString("ru-KZ", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
+import { formatCurrency, formatDate } from "../lib/format";
 
 export function Transfers() {
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const [transfers, setTransfers] = useState<TransferWithDetails[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -39,11 +26,11 @@ export function Transfers() {
     try {
       setLoading(true);
       setError(null);
-      const [t, a] = await Promise.all([
+      const [transfersData, a] = await Promise.all([
         api.getTransfers({ limit: 50 }),
         api.getAccounts(),
       ]);
-      setTransfers(t);
+      setTransfers(transfersData);
       setAccounts(a);
       if (a.length > 0 && form.from_account_id === 0) {
         setForm((prev) => ({
@@ -68,7 +55,7 @@ export function Transfers() {
     const amount = parseFloat(form.amount);
     if (isNaN(amount) || amount <= 0) return;
     if (form.from_account_id === form.to_account_id) {
-      showToast("Выберите разные счета", "error");
+      showToast(t("transfers.selectDifferent"), "error");
       return;
     }
     try {
@@ -79,7 +66,7 @@ export function Transfers() {
         date: form.date,
         note: form.note.trim() || null,
       });
-      showToast("Перевод выполнен", "success");
+      showToast(t("transfers.done"), "success");
       setForm((prev) => ({
         ...prev,
         amount: "",
@@ -90,7 +77,7 @@ export function Transfers() {
       load();
     } catch (err) {
       setError(String(err));
-      showToast("Ошибка при переводе", "error");
+      showToast(t("transfers.error"), "error");
     }
   };
 
@@ -103,7 +90,7 @@ export function Transfers() {
       )}
 
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-medium">Переводы</h3>
+        <h3 className="text-lg font-medium">{t("transfers.title")}</h3>
         <button
           type="button"
           onClick={() => {
@@ -122,7 +109,7 @@ export function Transfers() {
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
         >
           <Plus size={18} />
-          Новый перевод
+          {t("transfers.newTransfer")}
         </button>
       </div>
 
@@ -131,10 +118,10 @@ export function Transfers() {
           onSubmit={handleSubmit}
           className="p-6 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm dark:shadow-none space-y-4 animate-slide-down"
         >
-          <h4 className="font-medium">Перевод между счетами</h4>
+          <h4 className="font-medium">{t("transfers.formTitle")}</h4>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Со счёта</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("transfers.from")}</label>
               <select
                 value={form.from_account_id}
                 onChange={(e) => setForm((f) => ({ ...f, from_account_id: +e.target.value }))}
@@ -149,7 +136,7 @@ export function Transfers() {
               </select>
             </div>
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">На счёт</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("transfers.to")}</label>
               <select
                 value={form.to_account_id}
                 onChange={(e) => setForm((f) => ({ ...f, to_account_id: +e.target.value }))}
@@ -164,7 +151,7 @@ export function Transfers() {
               </select>
             </div>
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Сумма</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("transfers.amount")}</label>
               <input
                 type="number"
                 step="0.01"
@@ -176,7 +163,7 @@ export function Transfers() {
               />
             </div>
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Дата</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("transfers.date")}</label>
               <input
                 type="date"
                 value={form.date}
@@ -186,13 +173,13 @@ export function Transfers() {
             </div>
           </div>
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">Заметка</label>
+            <label className="block text-sm text-zinc-400 mb-1">{t("transfers.note")}</label>
             <input
               type="text"
               value={form.note}
               onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
               className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder-zinc-500 form-transition focus:ring-2 focus:ring-emerald-500"
-              placeholder="Описание перевода"
+              placeholder={t("transactions.transferDescription")}
             />
           </div>
           <div className="flex gap-2">
@@ -200,14 +187,14 @@ export function Transfers() {
               type="submit"
               className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
             >
-              Выполнить перевод
+              {t("transfers.execute")}
             </button>
             <button
               type="button"
               onClick={() => setShowForm(false)}
               className="px-4 py-2 rounded-lg bg-zinc-600 text-white hover:bg-zinc-500 btn-transition"
             >
-              Отмена
+              {t("common.cancel")}
             </button>
           </div>
         </form>
@@ -215,7 +202,7 @@ export function Transfers() {
 
       <div className="rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 overflow-hidden">
         <div className="p-4 border-b border-zinc-200 dark:border-zinc-700">
-          <h4 className="font-medium text-zinc-900 dark:text-zinc-100">История переводов</h4>
+          <h4 className="font-medium text-zinc-900 dark:text-zinc-100">{t("transfers.history")}</h4>
         </div>
         {loading ? (
           <div className="p-6 space-y-3">
@@ -227,8 +214,8 @@ export function Transfers() {
           <div className="p-6">
             <EmptyState
               icon={ArrowRightLeft}
-              title="Нет переводов"
-              description="Переводы между вашими счетами появятся здесь после первого перевода."
+              title={t("transfers.emptyTitle")}
+              description={t("transfers.emptyDesc")}
               action={
                 <button
                   type="button"
@@ -236,26 +223,26 @@ export function Transfers() {
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
                 >
                   <Plus size={18} />
-                  Новый перевод
+                  {t("transfers.newTransfer")}
                 </button>
               }
             />
           </div>
         ) : (
           <ul className="divide-y divide-zinc-200 dark:divide-zinc-700">
-            {transfers.map((t) => (
+            {transfers.map((tr) => (
               <li
-                key={t.id}
+                key={tr.id}
                 className="p-4 flex flex-wrap items-center gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
               >
-                <span className="font-medium text-zinc-900 dark:text-zinc-100">{t.from_account_name}</span>
+                <span className="font-medium text-zinc-900 dark:text-zinc-100">{tr.from_account_name}</span>
                 <ArrowRightLeft size={16} className="text-zinc-400 shrink-0" />
-                <span className="font-medium text-zinc-900 dark:text-zinc-100">{t.to_account_name}</span>
-                <span className="font-semibold text-emerald-500">{formatAmount(t.amount)} ₸</span>
-                <span className="text-sm text-zinc-500 dark:text-zinc-400">{formatDate(t.date)}</span>
-                {t.note && (
-                  <span className="text-sm text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]" title={t.note}>
-                    {t.note}
+                <span className="font-medium text-zinc-900 dark:text-zinc-100">{tr.to_account_name}</span>
+                <span className="font-semibold text-emerald-500">{formatCurrency(tr.amount)} ₸</span>
+                <span className="text-sm text-zinc-500 dark:text-zinc-400">{formatDate(tr.date)}</span>
+                {tr.note && (
+                  <span className="text-sm text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]" title={tr.note}>
+                    {tr.note}
                   </span>
                 )}
               </li>

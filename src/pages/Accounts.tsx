@@ -1,15 +1,11 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Plus, Pencil, Trash2, Banknote, CreditCard, PiggyBank, Wallet } from "lucide-react";
 import { api, type Account } from "../lib/api";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { EmptyState } from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
-
-const accountTypeLabels: Record<string, string> = {
-  cash: "Наличные",
-  card: "Карта",
-  savings: "Накопления",
-};
+import { formatCurrency } from "../lib/format";
 
 const accountTypeIcons: Record<string, typeof Banknote> = {
   cash: Banknote,
@@ -36,16 +32,14 @@ const accountTypeStyles: Record<string, { gradient: string; iconBg: string; icon
   },
 };
 
-function formatAmount(amount: number, currency: string = "KZT") {
-  return new Intl.NumberFormat("ru-KZ", {
-    style: "decimal",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount) + ` ${currency}`;
-}
-
 export function Accounts() {
+  const { t } = useTranslation();
   const { showToast } = useToast();
+  const accountTypeLabels: Record<string, string> = {
+    cash: t("accounts.cash"),
+    card: t("accounts.card"),
+    savings: t("accounts.savings"),
+  };
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +82,7 @@ export function Accounts() {
           account_type: form.account_type,
           currency: form.currency,
         });
-        showToast("Счёт обновлён", "success");
+        showToast(t("accounts.updated"), "success");
       } else {
         const initialBalance =
           form.initial_balance === "" || form.initial_balance === undefined
@@ -102,7 +96,7 @@ export function Accounts() {
             ? { initial_balance: initialBalance }
             : {}),
         });
-        showToast("Счёт создан", "success");
+        showToast(t("accounts.created"), "success");
       }
       setForm({ name: "", account_type: "card", currency: "KZT", initial_balance: "" });
       setShowForm(false);
@@ -110,7 +104,7 @@ export function Accounts() {
       loadAccounts();
     } catch (e) {
       setError(String(e));
-      showToast("Ошибка при сохранении", "error");
+      showToast(t("accounts.errorSave"), "error");
     }
   };
 
@@ -135,16 +129,16 @@ export function Accounts() {
       await api.deleteAccount(deleteConfirm.id);
       setDeleteConfirm(null);
       loadAccounts();
-      showToast("Счёт удалён", "success");
+      showToast(t("accounts.deleted"), "success");
     } catch (e) {
       const msg = String(e);
-      if (msg.includes("транзакциями")) {
+      if (msg.includes(t("accounts.hasTransactions"))) {
         setReassignDialog({ accountId: deleteConfirm.id });
         setReassignToId(accounts.find((a) => a.id !== deleteConfirm.id)?.id ?? 0);
         setDeleteConfirm(null);
       } else {
         setError(msg);
-        showToast("Ошибка при удалении", "error");
+        showToast(t("accounts.errorDelete"), "error");
       }
     }
   };
@@ -157,10 +151,10 @@ export function Accounts() {
       setReassignDialog(null);
       setReassignToId(0);
       loadAccounts();
-      showToast("Транзакции перенесены, счёт удалён", "success");
+      showToast(t("accounts.transferredAndDeleted"), "success");
     } catch (e) {
       setError(String(e));
-      showToast("Ошибка при переносе или удалении", "error");
+      showToast(t("accounts.errorTransfer"), "error");
     }
   };
 
@@ -183,10 +177,10 @@ export function Accounts() {
 
       <div className="flex justify-between items-center">
         <div>
-          <h3 className="text-lg font-medium">Мои счета</h3>
+          <h3 className="text-lg font-medium">{t("accounts.myAccounts")}</h3>
           {accounts.length > 0 && (
             <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-              Общий баланс: <span className="font-semibold text-emerald-500">{formatAmount(totalBalance)}</span>
+              {t("sidebar.totalBalance")}: <span className="font-semibold text-emerald-500">{formatCurrency(totalBalance)}</span>
             </p>
           )}
         </div>
@@ -199,7 +193,7 @@ export function Accounts() {
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
         >
           <Plus size={18} />
-          Добавить счёт
+          {t("accounts.addAccount")}
         </button>
       </div>
 
@@ -208,21 +202,21 @@ export function Accounts() {
           onSubmit={handleSubmit}
           className="p-6 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm dark:shadow-none space-y-4 animate-slide-down"
         >
-          <h4 className="font-medium">{editingId ? "Редактировать счёт" : "Новый счёт"}</h4>
+          <h4 className="font-medium">{editingId ? t("accounts.editAccount") : t("accounts.newAccount")}</h4>
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">Название</label>
+            <label className="block text-sm text-zinc-400 mb-1">{t("accounts.name")}</label>
             <input
               type="text"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder-zinc-500 form-transition focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-              placeholder="Например: Основная карта"
+              placeholder={t("accounts.placeholderName")}
               autoFocus
               required
             />
           </div>
           <div>
-            <label className="block text-sm text-zinc-400 mb-2">Тип</label>
+            <label className="block text-sm text-zinc-400 mb-2">{t("accounts.type")}</label>
             <div className="grid grid-cols-3 gap-3">
               {Object.entries(accountTypeLabels).map(([value, label]) => {
                 const Icon = accountTypeIcons[value] ?? Banknote;
@@ -251,22 +245,22 @@ export function Accounts() {
             </div>
           </div>
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">Валюта</label>
+            <label className="block text-sm text-zinc-400 mb-1">{t("accounts.currency")}</label>
             <select
               value={form.currency}
               onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
               className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white form-transition focus:ring-2 focus:ring-emerald-500"
             >
-              <option value="KZT">KZT - Тенге</option>
-              <option value="USD">USD - Доллар</option>
-              <option value="EUR">EUR - Евро</option>
-              <option value="RUB">RUB - Рубль</option>
+              <option value="KZT">{t("accounts.currencyKzt")}</option>
+              <option value="USD">{t("accounts.currencyUsd")}</option>
+              <option value="EUR">{t("accounts.currencyEur")}</option>
+              <option value="RUB">{t("accounts.currencyRub")}</option>
             </select>
           </div>
           {!editingId && (
             <div>
               <label className="block text-sm text-zinc-400 mb-1">
-                Стартовый капитал
+                {t("accounts.initialBalance")}
               </label>
               <input
                 type="text"
@@ -276,10 +270,10 @@ export function Accounts() {
                   setForm((f) => ({ ...f, initial_balance: e.target.value }))
                 }
                 className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder-zinc-500 form-transition focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                placeholder="Сколько уже есть на счёте (например, на карте)"
+                placeholder={t("accounts.placeholderBalance")}
               />
               <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                Укажите текущий баланс счёта, если он уже есть. Можно оставить пустым.
+                {t("accounts.initialBalanceHint")}
               </p>
             </div>
           )}
@@ -288,14 +282,14 @@ export function Accounts() {
               type="submit"
               className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
             >
-              {editingId ? "Сохранить" : "Добавить"}
+              {editingId ? t("common.save") : t("common.add")}
             </button>
             <button
               type="button"
               onClick={cancelForm}
               className="px-4 py-2 rounded-lg bg-zinc-600 text-white hover:bg-zinc-500 btn-transition"
             >
-              Отмена
+              {t("common.cancel")}
             </button>
           </div>
         </form>
@@ -359,7 +353,7 @@ export function Accounts() {
               <p className={`mt-4 text-2xl font-bold ${
                 acc.balance >= 0 ? styles.iconColor : "text-red-500"
               }`}>
-                {formatAmount(acc.balance, acc.currency)}
+                {formatCurrency(acc.balance)} {acc.currency}
               </p>
             </div>
           );
@@ -370,8 +364,8 @@ export function Accounts() {
       {!loading && accounts.length === 0 && !showForm && (
         <EmptyState
           icon={Wallet}
-          title="Нет счетов"
-          description="Добавьте первый счёт, чтобы начать отслеживать свои финансы. Это может быть карта, наличные или накопления."
+          title={t("accounts.emptyTitle")}
+          description={t("accounts.emptyDesc")}
           action={
             <button
               type="button"
@@ -383,7 +377,7 @@ export function Accounts() {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
             >
               <Plus size={18} />
-              Добавить счёт
+              {t("accounts.addAccount")}
             </button>
           }
         />
@@ -391,9 +385,9 @@ export function Accounts() {
 
       <ConfirmDialog
         open={deleteConfirm !== null}
-        title="Удалить счёт?"
-        message="Счёт можно удалить только если по нему нет транзакций. Если есть транзакции, вы сможете перенести их на другой счёт."
-        confirmLabel="Удалить"
+        title={t("accounts.deleteConfirmTitle")}
+        message={t("accounts.deleteConfirmMessage")}
+        confirmLabel={t("common.delete")}
         variant="danger"
         onConfirm={handleDeleteConfirm}
         onCancel={() => setDeleteConfirm(null)}
@@ -416,12 +410,12 @@ export function Accounts() {
               onClick={(e) => e.stopPropagation()}
             >
               <h3 id="reassign-dialog-title" className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
-                Перенести транзакции
+                {t("accounts.reassignTitle")}
               </h3>
               <p className="text-zinc-600 dark:text-zinc-400 mb-4">
                 {targetAccounts.length === 0
-                  ? "У этого счёта есть транзакции. Добавьте другой счёт, чтобы перенести на него транзакции и затем удалить этот."
-                  : "У счёта есть транзакции. Выберите счёт, на который их перенести:"}
+                  ? t("accounts.hasTransactionsHint")
+                  : t("accounts.selectTransferTarget")}
               </p>
               {targetAccounts.length > 0 && (
                 <select
@@ -442,7 +436,7 @@ export function Accounts() {
                   onClick={() => setReassignDialog(null)}
                   className="px-4 py-2.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 btn-transition"
                 >
-                  Отмена
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="button"
@@ -450,7 +444,7 @@ export function Accounts() {
                   disabled={!canReassign}
                   className="px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white btn-transition"
                 >
-                  Перенести и удалить
+                  {t("accounts.reassignAndDelete")}
                 </button>
               </div>
             </div>

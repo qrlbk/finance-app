@@ -1,256 +1,148 @@
-# Детальный план улучшений Finance App
+# Finance App — Improvement Plan
 
-План составлен по результатам анализа кодовой базы (backend Rust/Tauri, frontend React, БД SQLite).
-
----
-
-## 1. Критичные пробелы в логике
-
-### 1.1 Автоплатежи (Recurring) не запускаются автоматически
-
-**Сейчас:** `process_recurring_payments` вызывается только вручную со страницы «Автоплатежи» (кнопка «Провести автоплатежи»).
-
-**Проблема:** Если пользователь не заходит на страницу, просроченные автоплатежи не создаются.
-
-**Рекомендации:**
-- При старте приложения (в `init_db_on_startup` или при первом открытии главного окна) вызывать `process_due_recurring` и логировать количество созданных транзакций.
-- Опционально: показывать в Header/Sidebar бейдж «Проведено N автоплатежей» при старте, если N > 0.
-- Альтернатива: Tauri/системный таймер раз в день (например в 00:05) вызывать команду обработки автоплатежей (требует фоновой задачи или проверки при каждом открытии окна).
-
-**Файлы:** `src-tauri/src/lib.rs` (setup), `src-tauri/src/commands.rs`, фронт: при загрузке Layout или Recurring.
+A structured plan of improvements and future work, based on codebase analysis (Rust/Tauri backend, React frontend, SQLite).
 
 ---
 
-### 1.2 Бюджеты: период weekly/yearly не учитывается
+## 1. Critical logic gaps (addressed)
 
-**Сейчас:** В `get_budgets_with_spending` всегда используется текущий **месяц** (`month_start`, `month_end`) для расчёта `spent`, независимо от поля `budget.period` (`weekly` / `monthly` / `yearly`).
+### 1.1 Recurring payments auto-run
 
-**Проблема:** Бюджет с периодом «неделя» или «год» отображается с тратами за месяц — некорректно.
+**Previously:** `process_recurring_payments` ran only when the user clicked “Process” on the Recurring page.
 
-**Рекомендации:**
-- В `get_budgets_with_spending` для каждой записи бюджета вычислять интервал по `period`:
-  - `weekly`: текущая неделя (пн–вс или сегодня −7 дней);
-  - `monthly`: текущий месяц (как сейчас);
-  - `yearly`: текущий год.
-- Либо хранить в бюджете явную дату начала периода и считать от неё (сложнее, но гибче).
-
-**Файлы:** `src-tauri/src/db/queries.rs` — функция `get_budgets_with_spending` и, при необходимости, `check_budget_alerts`.
+**Resolution:** On app startup (e.g. in Layout or backend init), `process_due_recurring` is called and the count of created transactions can be shown (e.g. “Processed N recurring payments”).
 
 ---
 
-### 1.3 Бюджетные алерты не показываются в UI
+### 1.2 Budget period (weekly/yearly)
 
-**Сейчас:** Есть API `getBudgetAlerts()` и логика в `check_budget_alerts` (80% — warning, 100% — exceeded), но на фронте метод нигде не вызывается.
+**Previously:** `get_budgets_with_spending` always used the current **month** for `spent`, regardless of `budget.period` (weekly/monthly/yearly).
 
-**Рекомендации:**
-- В **Header** или **Layout**: при загрузке вызывать `getBudgetAlerts()` и показывать иконку с бейджем (например колокольчик) и выпадающий список «Бюджет по категории X превышен / близок к лимиту».
-- На **Dashboard** можно дублировать блок с алертами вверху страницы для видимости.
-
-**Файлы:** `src/components/layout/Header.tsx`, `src/components/layout/Layout.tsx`, `src/pages/Dashboard.tsx`.
+**Resolution:** Spending window is computed per budget from `period`: current week for weekly, current month for monthly, current year for yearly.
 
 ---
 
-### 1.4 Мультивалютность не учитывается в итогах
+### 1.3 Budget alerts in UI
 
-**Сейчас:** `get_summary` считает `total_balance = SUM(balance)` по всем счетам. У каждого счёта есть поле `currency`, но конвертации нет.
+**Previously:** `getBudgetAlerts()` existed but was not used in the UI.
 
-**Проблема:** Если есть счета в KZT и USD, общий баланс в шапке и на дашборде — бессмысленная сумма чисел в разных валютах.
-
-**Рекомендации (по приоритету):**
-1. **Минимум:** В UI показывать предупреждение, если у пользователя счета в разных валютах: «Итоги приведены без конвертации. Для корректного общего баланса используйте одну валюту.»
-2. **Средний уровень:** Добавить в настройки «Базовая валюта» и опционально «Курсы валют» (ручное введение или раз в день). При расчёте `total_balance` конвертировать все балансы в базовую валюту (таблица `exchange_rates`: from_currency, to_currency, rate, date).
-3. **Расширение:** В отчётах и дашборде везде указывать валюту и при мультивалютности показывать разбивку по валютам или всё в базовой.
-
-**Файлы:** `src-tauri/src/db/schema.rs` (таблица курсов при необходимости), `src-tauri/src/db/queries.rs` (`get_summary`), фронт: Settings (валюта/курсы), Layout/Dashboard (отображение).
+**Resolution:** Header (or Layout) loads budget alerts and shows an icon with a dropdown (e.g. bell) listing exceeded or near-limit budgets. Dashboard can show the same block.
 
 ---
 
-## 2. Улучшения UX и полноты функций
+### 1.4 Multi-currency in totals
 
-### 2.1 Отдельная страница «Переводы»
+**Previously:** `get_summary` summed raw balances; different account currencies were mixed.
 
-**Сейчас:** Перевод между счетами — только форма на странице «Транзакции» (кнопка «Перевод»). Нет отдельного раздела и истории именно переводов.
-
-**Рекомендации:**
-- Добавить маршрут `/transfers` и страницу «Переводы» со списком последних переводов (можно получать как пару транзакций income/expense в один день с одинаковой суммой и пометкой/типом, либо ввести отдельную сущность `transfers` с `from_account_id`, `to_account_id`, `amount`, `date` и при создании генерировать две транзакции).
-- В сайдбаре добавить пункт «Переводы» (между «Транзакции» и «Счета»).
-- На дашборде добавить кнопку «Перевод» рядом с «Добавить доход» / «Добавить расход».
-
-**Файлы:** `src/App.tsx`, `src/components/layout/Sidebar.tsx`, новая `src/pages/Transfers.tsx`, `src/pages/Dashboard.tsx`, при желании — `src-tauri` (отдельная команда `get_transfers` и хранение связи пары транзакций или таблица `transfers`).
+**Resolution:** Base currency and exchange rates in settings; `get_summary` converts balances to base currency. UI shows a warning when multiple currencies exist without conversion. Reports and dashboard use base currency.
 
 ---
 
-### 2.2 Заполнение заголовков страниц в Layout
+## 2. UX and feature completeness (addressed)
 
-**Сейчас:** В `Layout.tsx` в `pageTitles` заданы не все пути: нет `recurring`, `categories`, `insights`, `import`.
+### 2.1 Transfers page
 
-**Рекомендации:** Добавить в `pageTitles` все маршруты, например: `/recurring` → «Автоплатежи», `/categories` → «Категории», `/insights` → «Аналитика», `/import` → «Импорт выписки», чтобы заголовок окна всегда соответствовал разделу.
+- Route `/transfers` and a dedicated Transfers page with history.
+- Sidebar entry “Transfers.”
+- Dashboard button “Transfer” next to Add income/expense.
 
-**Файлы:** `src/components/layout/Layout.tsx`.
+### 2.2 Page titles in Layout
 
----
+- All routes (e.g. `/recurring`, `/categories`, `/insights`, `/import`) have entries in `pageTitles` so the window title matches the current section.
 
-### 2.3 Удаление счёта с переназначением транзакций
+### 2.3 Account deletion with transaction reassignment
 
-**Сейчас:** Удалить счёт можно только если по нему нет транзакций. Иначе показывается ошибка «сначала удалите или переместите транзакции», но механизма «переместить на другой счёт» нет.
+- When deleting an account that has transactions, the UI offers “Reassign transactions to another account” and a account selector.
+- Backend: e.g. `reassign_transactions_to_account(from_id, to_id)` (UPDATE + balance recalc), then allow delete.
 
-**Рекомендации:**
-- В диалоге удаления счёта: если по счёту есть транзакции, предлагать «Перенести транзакции на другой счёт» — выбор счёта из списка и вызов новой команды, например `reassign_transactions_to_account(from_account_id, to_account_id)` (UPDATE transactions SET account_id = ? WHERE account_id = ? и пересчёт балансов).
-- После переназначения разрешать удаление счёта.
+### 2.4 Category hierarchy (parent_id)
 
-**Файлы:** Backend: `src-tauri/src/commands.rs`, `src-tauri/src/db/queries.rs`. Frontend: `src/pages/Accounts.tsx` (диалог удаления, выбор счёта, вызов API).
-
----
-
-### 2.4 Иерархия категорий (parent_id)
-
-**Сейчас:** В схеме БД у категорий есть `parent_id`, в API `create_category` принимает `parent_id`, но на фронте категории отображаются плоским списком, родительские/дочерние не используются.
-
-**Рекомендации:**
-- На странице «Категории» отображать дерево: родительские категории и подкатегории (отступ или вложенный список). При создании категории — выбор родителя (опционально).
-- В отчётах и фильтрах: опция «Учитывать подкатегории» (при выборе родителя агрегировать по parent_id = X OR id = X).
-- В `get_categories` можно отдавать уже древовидную структуру или оставить плоский список с `parent_id` и строить дерево на фронте.
-
-**Файлы:** `src/pages/Categories.tsx`, отчёты/фильтры (категория + «включая подкатегории»), при необходимости — `src-tauri/src/db/queries.rs` для агрегации по дереву.
+- Categories page shows a tree (parent/children). When creating a category, optional parent selection.
+- Reports and filters: option “Include subcategories” when aggregating by category.
 
 ---
 
-## 3. Экспорт и импорт
+## 3. Export and import
 
-### 3.1 Экспорт: фильтры по счёту и категории
+### 3.1 Export filters
 
-**Сейчас:** В `ExportOptions` есть только `date_from`, `date_to`, `include_accounts`, `include_categories`. Фильтрации транзакций по счёту или категории при экспорте нет.
+- Export options include optional `account_id` and `category_id` so users can export a single account or category.
 
-**Рекомендации:** Добавить в опции экспорта (и в форму в Настройках) поля `account_id` (опционально) и `category_id` (опционально) и передавать их в `TransactionFilters` в `export_data`, чтобы экспортировать только выбранный счёт или категорию.
+### 3.2 Import XLSX
 
-**Файлы:** `src-tauri/src/export.rs`, `src-tauri/src/commands.rs` (`ExportDataInput`), `src/pages/Settings.tsx` (форма экспорта).
+- Support XLSX in addition to CSV/JSON (e.g. calamine in Rust), with a documented column layout (date, amount, type, account, category, note).
 
----
+### 3.3 Backup restore (SQLCipher)
 
-### 3.2 Импорт XLSX
-
-**Сейчас:** Импорт данных поддерживает только CSV и JSON (`import_data`). Экспорт есть в CSV, JSON, XLSX.
-
-**Рекомендации:** Добавить чтение XLSX при импорте (например библиотека calamine или аналог в Rust), парсинг листа с колонками по шаблону (дата, сумма, тип, счёт, категория, заметка) и вызов существующей логики вставки транзакций/счетов/категорий. Формат можно задокументировать (как при экспорте XLSX).
-
-**Файлы:** `src-tauri/src/export.rs` (или отдельный модуль import), `src-tauri/Cargo.toml` (зависимость), `src-tauri/src/commands.rs`, фронт: выбор формата «xlsx» в импорте.
+- After restore, verify the DB opens with the current SQLCipher key; on failure, rollback and show a clear message. Warn user: “Ensure the backup was created by this app; otherwise data may not open.”
 
 ---
 
-### 3.3 Восстановление из бэкапа (SQLCipher)
+## 4. Quality and reliability
 
-**Сейчас:** `restore_backup` копирует файл в место основной БД. Если текущая БД открыта с ключом SQLCipher, а бэкап был создан с другим ключом или без шифрования, при следующем открытии возможна ошибка или нечитаемые данные.
+### 4.1 Transaction pagination
 
-**Рекомендации:** По возможности проверять заголовок/метаданные файла бэкапа (например, что это SQLCipher с тем же kdf_iter и т.д.) или при восстановлении показывать предупреждение: «Убедитесь, что бэкап создан этим приложением. Иначе данные могут не открыться.» В перспективе — единый формат бэкапа (всегда зашифрованный с тем же ключом, что и основная БД).
+- API: `limit` + `offset` (or cursor). UI: load 50–100 per page with “Load more” or infinite scroll.
 
-**Файлы:** `src-tauri/src/commands.rs` (`restore_backup`), при необходимости `src-tauri/src/crypto.rs` или `db/mod.rs`.
+### 4.2 Consistent error messages
 
----
+- All user-facing messages in one language (or keys for i18n). Backend and frontend use the same set of message keys/constants.
 
-## 4. Качество и надёжность
+### 4.3 Import duplicate detection
 
-### 4.1 Пагинация транзакций
+- Stricter duplicate key: e.g. exact match on date + rounded amount + normalized note. Option to “Import anyway” for rows marked as duplicates. Optional hash storage for future checks.
 
-**Сейчас:** `get_transactions` принимает `limit` (макс. 500) и не имеет offset/cursor. Фронт запрашивает до 500 записей и при большом объёме не может «подгрузить ещё».
+### 4.4 E2E coverage
 
-**Рекомендации:** Ввести пагинацию на уровне API: например `limit` + `offset` или `limit` + `cursor` (id последней транзакции). На странице «Транзакции» подгружать по 50–100 записей и кнопка «Показать ещё» или бесконечный скролл.
-
-**Файлы:** `src-tauri/src/db/queries.rs` (`TransactionFilters`, SQL с LIMIT/OFFSET или WHERE id < ?), `src-tauri/src/commands.rs`, `src/lib/api.ts`, `src/pages/Transactions.tsx`.
+- E2E scenarios: create account → add income/expense → transfer → check dashboard totals; optional: import sample PDF, export, restore backup on a test DB.
 
 ---
 
-### 4.2 Единый язык сообщений об ошибках
+## 5. ML and analytics
 
-**Сейчас:** Часть сообщений на русском («Счёт не найден», «Некорректная дата»), часть на английском («File not found», «Unsupported format»).
+### 5.1 Train after import
 
-**Рекомендации:** Привести все пользовательские сообщения к одному языку (русский, как в большинстве UI). Вынести строки в константы или отдельный модуль, чтобы легче было потом добавить локализацию.
+- After a successful import (bank statement or CSV/JSON/XLSX), prompt: “Train model on new data?” or run training in background and notify when done.
 
-**Файлы:** Все команды в `commands.rs`, `export.rs`, `bank_import`, фронт — отображение ошибок с бэкенда.
+### 5.2 Forecast and reports by currency
 
----
-
-### 4.3 Дубликаты при импорте выписок
-
-**Сейчас:** Дубликат определяется по совпадению даты, суммы (с допуском 0.01) и совпадению/подстроке заметки (LIKE по первым 15 символам). Короткие или похожие описания могут давать ложные срабатывания.
-
-**Рекомендации:** Ужесточить критерий: например, полное совпадение `date` + округлённая сумма + точное совпадение `note` (или нормализованная строка без лишних пробелов). Либо добавить в UI возможность «всё равно импортировать» для помеченных как дубликаты и хранить хэш (date+amount+normalized_note) для последующих проверок.
-
-**Файлы:** `src-tauri/src/commands.rs` (`check_duplicate`), при необходимости расширение логики в `import_bank_transactions`.
+- Once multi-currency and conversion exist, forecasts and category reports should use base currency (or explicit currency) so amounts are comparable.
 
 ---
 
-### 4.4 E2E и критические сценарии
+## 6. Prioritization summary
 
-**Сейчас:** E2E есть (playwright), но покрытие критичных потоков (создание счёта → добавление транзакции → отчёт/дашборд) стоит проверить.
-
-**Рекомендации:** Добавить E2E сценарии: создание счёта, добавление дохода/расхода, создание перевода, проверка итогов на дашборде; импорт выписки (если есть тестовый PDF); экспорт и при необходимости восстановление из бэкапа (на тестовой БД). Это повысит уверенность при рефакторинге и добавлении фич.
-
-**Файлы:** `e2e/*.spec.ts`, при необходимости тестовая БД или моки.
-
----
-
-## 5. ML и аналитика
-
-### 5.1 Обучение модели при импорте
-
-**Сейчас:** Модель категорий обучается вручную (Настройки → «Обучить модель»). После массового импорта выписки новые транзакции не используются для обучения, пока пользователь не нажмёт обучение снова.
-
-**Рекомендации:** После успешного импорта банковских транзакций (или при импорте CSV/JSON с категориями) предлагать в UI: «Обучить модель по новым данным?» или запускать фоновое переобучение с уведомлением по завершении. Это улучшит качество предсказаний для следующих импортов и ручных вводов.
-
-**Файлы:** `src/pages/Import.tsx` (после успешного импорта — вызов `trainModel` или предложение), при желании — автоматический вызов с бэкенда после импорта.
+| Priority | Task |
+|----------|------|
+| **P0** | Auto-run recurring on startup; budget period (weekly/yearly); show budget alerts in UI |
+| **P1** | Multi-currency (base + rates); Transfers page; page titles |
+| **P2** | Reassign transactions on account delete; category tree in UI; export filters; XLSX import; transaction pagination |
+| **P3** | Unified error language; duplicate rules; E2E; train-after-import; backup restore checks |
 
 ---
 
-### 5.2 Прогноз и отчёты по валютам
+## 7. Current implementation status
 
-Если будет введена мультивалютность и конвертация (п. 1.4), прогноз расходов и отчёты по категориям должны считаться в базовой валюте или с явным указанием валюты, чтобы не смешивать суммы в разных валютах без конвертации.
+Most P0–P2 items above are **already implemented** in the codebase:
 
-**Файлы:** После внедрения курсов — `ml/forecast.rs`, `ml/insights.rs`, запросы по транзакциям с учётом валюты счёта.
+- **P0:** Recurring runs on startup; budget period in `get_budgets_with_spending`; budget alerts in Header.
+- **P1:** Base currency, `exchange_rates` table, conversion in `get_summary`; Transfers page; page titles; multi-currency warning.
+- **P2:** Reassign transactions; category hierarchy in UI; export filters; XLSX import; pagination (“Load more”).
+- **P3:** Centralized error messages (e.g. `messages.rs`); backup restore verification; “Train model?” after import in Settings and Import page.
 
----
-
-## 6. Приоритизация (кратко)
-
-| Приоритет | Задача |
-|-----------|--------|
-| P0 | Автозапуск автоплатежей при старте приложения (1.1) |
-| P0 | Учёт периода бюджета weekly/yearly при расчёте spent (1.2) |
-| P0 | Показ бюджетных алертов в UI (1.3) |
-| P1 | Предупреждение или конвертация при мультивалютности (1.4) |
-| P1 | Страница «Переводы» и кнопка на дашборде (2.1) |
-| P1 | Заполнение pageTitles в Layout (2.2) |
-| P2 | Переназначение транзакций при удалении счёта (2.3) |
-| P2 | Дерево категорий в UI и в отчётах (2.4) |
-| P2 | Фильтры экспорта по счёту/категории (3.1) |
-| P2 | Импорт XLSX (3.2) |
-| P2 | Пагинация транзакций (4.1) |
-| P3 | Единый язык ошибок (4.2), уточнение дубликатов (4.3), E2E (4.4) |
-| P3 | Обучение модели после импорта (5.1), бэкап SQLCipher (3.3) |
+**Planned for later:** multi-profile, richer charts, notifications.
 
 ---
 
-## 7. Что уже сделано хорошо
+## 8. What is already in good shape
 
-- Валидация на бэкенде (счета, транзакции, автоплатежи, бюджеты).
-- Кэш категорий и счетов с инвалидацией при изменениях.
-- ML: предсказание категории, прогноз расходов, аномалии, Smart Insights.
-- Экспорт в CSV/JSON/XLSX, импорт CSV/JSON, импорт выписок Kaspi с проверкой дубликатов и подсказкой категории.
-- Автоплатежи с частотами, end_date, is_active и проведением по кнопке.
-- Бюджеты с расчётом spent и процента (для месячного периода), алерты на бэкенде.
-- Тесты: команды (валидация, кэш, дубликаты), схема БД, миграции.
-- UI: тема, тосты, подтверждение удаления, пустые состояния, фильтры и ML-подсказка категории на форме транзакции.
+- Backend validation (accounts, transactions, recurring, budgets).
+- Category/account caching with invalidation.
+- ML: category prediction, forecast, anomalies, Smart Insights.
+- Export CSV/JSON/XLSX; import CSV/JSON/XLSX; bank statement import (e.g. Kaspi) with duplicate check and category suggestion.
+- Recurring: frequencies, end_date, is_active, process on button and on startup.
+- Budgets: spent and percent by period; alerts on backend.
+- Tests: commands, schema, migrations.
+- UI: theme, toasts, confirm dialogs, empty states, filters, ML category suggestion on transaction form, i18n (Kazakh, Russian, English).
 
-План можно использовать пошагово: сначала P0, затем P1–P2 по желанию, P3 — по времени.
-
----
-
-## 8. Статус реализации (актуально)
-
-Большинство пунктов из раздела 6 уже реализованы в кодовой базе:
-
-- **P0:** Автозапуск автоплатежей при старте (Layout + backend), учёт периода бюджета weekly/yearly в `get_budgets_with_spending`, показ бюджетных алертов в Header (колокольчик, выпадающий список).
-- **P1:** Полная мультивалютность: базовая валюта в настройках, таблица курсов `exchange_rates`, конвертация в `get_summary` и отображение в базовой валюте в Header/Dashboard/Reports. Страница «Переводы», заголовки страниц, предупреждение при нескольких валютах.
-- **P2:** Переназначение транзакций при удалении счёта, иерархия категорий в UI, фильтры экспорта по счёту/категории, импорт XLSX, пагинация транзакций (limit/offset, «Показать ещё»).
-- **P3:** Единый язык сообщений об ошибках (русский) в `messages.rs`, `db/mod.rs`, `crypto.rs`, `schema.rs`, `security.rs`. Безопасность восстановления из бэкапа: после копирования проверка открытия БД с текущим ключом SQLCipher, при ошибке — откат и сообщение пользователю. Предложение «Обучить модель?» после импорта CSV/JSON/XLSX (Настройки) и после импорта банковской выписки (Import.tsx).
-
-**Планы на будущее (не в текущем спринте):** мультипрофильность, расширенные графики и диаграммы, уведомления (Notifications) о событиях.
+Use this plan as a checklist: P0 first, then P1–P2 as needed, P3 when time allows.

@@ -1,551 +1,214 @@
-# Логика ML-модели: предсказание категории транзакций
+# ML Model — Transaction Category Prediction
 
-Документ описывает, как работает ML-модель в приложении: от обучения на данных из БД до предсказания категории по тексту заметки (и опционально сумме/дате).
+This document describes how the ML model works: from training on database data to predicting transaction category from the note text (and optionally amount/date).
 
 ---
 
-## 1. Общая архитектура
+## 1. Overview
 
-Модель решает задачу **классификации текста**: по описанию транзакции (заметка, сумма, дата) предсказывается категория расходов/доходов.
+The model solves a **text classification** task: from a transaction description (note, amount, date) it predicts an income/expense category.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ОБУЧЕНИЕ (train_model)                               │
+│                         TRAINING (train_model)                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  БД (transactions + categories)                                              │
+│  DB (transactions + categories)                                              │
 │        │                                                                     │
 │        ▼                                                                     │
-│  Загрузка: note, category_id, amount, date                                   │
+│  Load: note, category_id, amount, date                                       │
 │        │                                                                     │
 │        ▼                                                                     │
-│  Tokenizer → TF-IDF → Features (TF-IDF + amount + time) → NaiveBayes          │
+│  Tokenizer → TF-IDF → Features (TF-IDF + amount + time) → NaiveBayes         │
 │        │                                                                     │
 │        ▼                                                                     │
-│  CategoryModel (vocabulary, idf, priors, probs, category_names)              │
+│  CategoryModel (vocabulary, idf, priors, probs, category_names)               │
 │        │                                                                     │
 │        ▼                                                                     │
-│  Сохранение в ml_model.json                                                  │
+│  Save to ml_model.json                                                       │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ПРЕДСКАЗАНИЕ (predict_category)                       │
+│                         PREDICTION (predict_category)                        │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  Вход: note, amount?, date?                                                  │
+│  Input: note, amount?, date?                                                 │
 │        │                                                                     │
 │        ▼                                                                     │
-│  Загрузка CategoryModel из ml_model.json                                     │
+│  Load CategoryModel from ml_model.json                                       │
 │        │                                                                     │
 │        ▼                                                                     │
-│  Tokenizer → TF-IDF (from saved) → Features → NaiveBayes (from saved)        │
+│  Tokenizer → TF-IDF (saved) → Features → NaiveBayes (saved)                  │
 │        │                                                                     │
 │        ▼                                                                     │
 │  (category_id, category_name, confidence)                                    │
 │        │                                                                     │
 │        ▼                                                                     │
-│  Фильтр: confidence >= 0.3 → возврат пользователю                           │
+│  Filter: confidence >= 0.3 → return to user                                   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. Блок-схема: обучение модели (пошагово)
+## 2. Training pipeline (summary)
 
-```
-                    ┌──────────────────┐
-                    │  train_model()    │
-                    └────────┬─────────┘
-                             │
-                             ▼
-                    ┌──────────────────┐
-                    │ load_training_    │
-                    │ data(conn)        │
-                    │ SELECT note,      │
-                    │ category_id,      │
-                    │ amount, date      │
-                    └────────┬─────────┘
-                             │
-              ┌──────────────┴──────────────┐
-              │ notes.len() >= 20 ?        │
-              └──────────────┬──────────────┘
-                    Нет │           │ Да
-                        ▼           │
-              ┌──────────────┐      │
-              │ Err(недоста-  │      │
-              │  точно данных)│      │
-              └──────────────┘      │
-                                    ▼
-                    ┌──────────────────────────┐
-                    │ Токенизация с n-граммами  │
-                    │ tokenize_with_ngrams(note)│
-                    │ для каждой заметки        │
-                    └────────┬─────────────────┘
-                             │
-                             ▼
-                    ┌──────────────────────────┐
-                    │ Отбор: только записи с    │
-                    │ непустыми токенами        │
-                    │ valid_tokens, valid_labels │
-                    └────────┬─────────────────┘
-                             │
-              ┌──────────────┴──────────────┐
-              │ valid_tokens.len() >= 20 ?   │
-              └──────────────┬──────────────┘
-                    Нет │           │ Да
-                        ▼           │
-              Err(мало данных)      │
-                                    ▼
-                    ┌──────────────────────────┐
-                    │ vectorizer.fit(valid_     │
-                    │   tokens)  ← TF-IDF        │
-                    │ Словарь + IDF веса        │
-                    └────────┬─────────────────┘
-                             │
-                             ▼
-                    ┌──────────────────────────┐
-                    │ Для каждой записи:       │
-                    │  tfidf = transform(tokens)│
-                    │  TransactionFeatures(    │
-                    │    tfidf, amount, date)   │
-                    │  combined = to_combined_  │
-                    │    vector()              │
-                    └────────┬─────────────────┘
-                             │
-                             ▼
-                    ┌──────────────────────────┐
-                    │ classifier.fit(features,  │
-                    │   valid_labels)           │
-                    │ Naive Bayes: priors +     │
-                    │ feature_log_probs         │
-                    └────────┬─────────────────┘
-                             │
-                             ▼
-                    ┌──────────────────────────┐
-                    │ evaluate_accuracy()       │
-                    │ 5-fold cross-validation   │
-                    └────────┬─────────────────┘
-                             │
-                             ▼
-                    ┌──────────────────────────┐
-                    │ CategoryModel::new_       │
-                    │ enhanced(...)            │
-                    │ use_enhanced_features=true│
-                    └────────┬─────────────────┘
-                             │
-                             ▼
-                    ┌──────────────────────────┐
-                    │ model.save(path)          │
-                    │ → ml_model.json           │
-                    └──────────────────────────┘
-```
+1. **Load training data** — `SELECT note, category_id, amount, date` from transactions with non-null category and non-empty note.
+2. **Minimum 20 samples** — Else return “insufficient data.”
+3. **Tokenize** — Each note → tokens (with optional n-grams).
+4. **Filter** — Keep only rows with non-empty tokens; require ≥ 20 again.
+5. **TF-IDF fit** — Build vocabulary and IDF from corpus.
+6. **Features** — For each row: TF-IDF vector + optional amount bucket + time features → combined vector.
+7. **Naive Bayes fit** — On (features, labels).
+8. **Evaluate** — e.g. 5-fold cross-validation for accuracy.
+9. **Save** — CategoryModel to JSON (`ml_model.json` or `category_model.json`).
 
 ---
 
-## 3. Блок-схема: предсказание категории (пошагово)
+## 3. Prediction pipeline (summary)
 
-```
-                    ┌──────────────────────────┐
-                    │ predict_category(note,    │
-                    │   amount?, date?)         │
-                    └────────┬─────────────────┘
-                             │
-              ┌──────────────┴──────────────┐
-              │ note не пустой и len >= 3 ? │
-              └──────────────┬──────────────┘
-                    Нет │           │ Да
-                        ▼           │
-                   return Ok(None)   │
-                                    ▼
-                    ┌──────────────────────────┐
-                    │ model_path существует?   │
-                    │ (get_model_path)          │
-                    └──────────────┬────────────┘
-                    Нет │           │ Да
-                        ▼           │
-                   return Ok(None)   │
-                                    ▼
-                    ┌──────────────────────────┐
-                    │ CategoryModel::load(path)│
-                    └────────┬─────────────────┘
-                             │
-                             ▼
-                    ┌──────────────────────────┐
-                    │ predict_with_context(    │
-                    │   note, amount, date)     │
-                    └────────┬─────────────────┘
-                             │
-         ┌───────────────────┴───────────────────┐
-         │ use_enhanced_features?                 │
-         └───────────────────┬───────────────────┘
-              Да │                    │ Нет
-                 ▼                    ▼
-    tokenize_with_ngrams(text)    tokenize(text)
-                 │                    │
-                 └──────────┬─────────┘
-                            ▼
-                    ┌──────────────────┐
-                    │ tokens.is_empty()?│
-                    └────────┬─────────┘
-                        Да │     │ Нет
-                           ▼     │
-                      return None │
-                                  ▼
-                    ┌──────────────────────────┐
-                    │ vectorizer.transform(    │
-                    │   tokens) → tfidf_features │
-                    │ (TfIdfVectorizer::from_   │
-                    │  saved)                   │
-                    └────────┬─────────────────┘
-                             │
-                    ┌────────┴────────┐
-                    │ tfidf пустой?   │
-                    └────────┬────────┘
-                        Да │     │ Нет
-                           ▼     │
-                      return None │
-                                  ▼
-                    ┌──────────────────────────┐
-                    │ use_enhanced && (amount   │
-                    │   или date заданы)?       │
-                    └────────┬─────────────────┘
-              Да │                    │ Нет
-                 ▼                    │
-    TransactionFeatures::new(        │
-      tfidf, amount, date)           │
-    to_combined_vector()             │
-                 │                    │
-                 └──────────┬─────────┘
-                            ▼
-                    ┌──────────────────────────┐
-                    │ classifier.predict(      │
-                    │   features)              │
-                    │ → (category_id, conf)    │
-                    └────────┬─────────────────┘
-                             │
-                             ▼
-                    ┌──────────────────────────┐
-                    │ category_name =          │
-                    │ category_names[id]       │
-                    └────────┬─────────────────┘
-                             │
-                             ▼
-                    ┌──────────────────────────┐
-                    │ confidence >= 0.3 ?      │
-                    │ (в commands.rs)           │
-                    └────────┬─────────────────┘
-                    Нет │           │ Да
-                        ▼           ▼
-                 return Ok(None)  return Ok(Some(
-                                    CategoryPrediction))
-```
+1. **Input check** — Note non-empty and length ≥ 3; else return `None`.
+2. **Model path** — If file missing, return `None`.
+3. **Load model** — `CategoryModel::load(path)`.
+4. **Tokenize** — Same as training (with n-grams if `use_enhanced_features`).
+5. **Transform** — `vectorizer.transform(tokens)` → TF-IDF vector.
+6. **Optional** — If enhanced and amount/date present, build `TransactionFeatures` and combined vector.
+7. **Predict** — `classifier.predict(features)` → (category_id, confidence).
+8. **Threshold** — If confidence < 0.3 (in `commands.rs`), return `None`; else return `CategoryPrediction`.
 
 ---
 
-## 4. Компоненты модели (кратко)
+## 4. Components
 
-| Компонент | Файл | Назначение |
-|-----------|------|------------|
-| **Tokenizer** | `ml/tokenizer.rs` | Разбивает текст на слова, убирает стоп-слова (RU/KZ), короткие слова и числа; поддерживает n-граммы (bigrams по умолчанию). |
-| **TfIdfVectorizer** | `ml/tfidf.rs` | Строит словарь по корпусу, считает IDF; преобразует токены в вектор TF-IDF с L2-нормализацией. |
-| **TransactionFeatures** | `ml/features.rs` | Дополняет TF-IDF: бакет суммы (VerySmall..VeryLarge), время (день недели, выходной, начало/конец месяца). |
-| **NaiveBayesClassifier** | `ml/classifier.rs` | Multinomial Naive Bayes с сглаживанием Лапласа (alpha=1). По вектору признаков возвращает класс и уверенность. |
-| **CategoryModel** | `ml/model.rs` | Сериализуемая обёртка: словарь, IDF, веса классификатора, имена категорий; save/load в JSON; predict/predict_with_context. |
-| **ModelTrainer** | `ml/trainer.rs` | Загружает данные из БД, прогоняет пайплайн обучения, оценивает точность (k-fold), создаёт и сохраняет CategoryModel. |
-
----
-
-## 5. Токенизация (детально)
-
-```
-Вход: строка заметки (например "Glovo доставка пиццы")
-
-  ┌─────────────────────────────────────────────────────────┐
-  │ 1. Приведение к нижнему регистру                        │
-  └────────────────────────┬───────────────────────────────┘
-                           ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │ 2. Разбиение по границам слов (Unicode)                  │
-  └────────────────────────┬───────────────────────────────┘
-                           ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │ 3. Фильтрация:                                          │
-  │    • длина слова >= 2 символа                           │
-  │    • не только цифры                                    │
-  │    • не стоп-слово (и/в/на/оплата/платеж/және/...)      │
-  └────────────────────────┬───────────────────────────────┘
-                           ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │ 4. Если use_enhanced_features: добавить биграммы        │
-  │    ["glovo", "доставка", "пиццы"]                        │
-  │    → ["glovo", "доставка", "пиццы", "glovo_доставка",    │
-  │       "доставка_пиццы"]                                  │
-  └─────────────────────────────────────────────────────────┘
-
-Выход: Vec<String> токенов
-```
+| Component | File | Purpose |
+|-----------|------|---------|
+| **Tokenizer** | `ml/tokenizer.rs` | Split text into words; remove stop-words (RU/KZ), short words, numbers; optional n-grams (e.g. bigrams). |
+| **TfIdfVectorizer** | `ml/tfidf.rs` | Build vocabulary and IDF from corpus; transform tokens to L2-normalized TF-IDF vectors. |
+| **TransactionFeatures** | `ml/features.rs` | Extend TF-IDF: amount bucket (VerySmall..VeryLarge), time (weekday, weekend, month start/end). |
+| **NaiveBayesClassifier** | `ml/classifier.rs` | Multinomial Naive Bayes with Laplace smoothing (alpha=1). Returns class and confidence. |
+| **CategoryModel** | `ml/model.rs` | Serializable wrapper: vocabulary, IDF, classifier weights, category names; save/load JSON; predict / predict_with_context. |
+| **ModelTrainer** | `ml/trainer.rs` | Load from DB, run training pipeline, evaluate (k-fold), create and save CategoryModel. |
 
 ---
 
-## 6. TF-IDF (обучение и преобразование)
+## 5. Tokenization (detail)
 
-**Обучение (fit):**
+1. **Lowercase** the note.
+2. **Split** on word boundaries (Unicode).
+3. **Filter:** length ≥ 2, not numeric-only, not stop-word (e.g. “и”, “в”, “оплата”, “және”).
+4. **Optional (enhanced):** add bigrams (e.g. “glovo”, “доставка”, “пиццы” → also “glovo_доставка”, “доставка_пиццы”).
 
-```
-Вход: массив документов (каждый документ = Vec<String> токенов)
-
-  ┌─────────────────────────────────────────────────────────┐
-  │ 1. Подсчёт в скольких документах встречается каждое     │
-  │    слово (word_doc_count)                                │
-  └────────────────────────┬───────────────────────────────┘
-                           ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │ 2. Словарь: слова отсортированы, каждому присвоен индекс │
-  └────────────────────────┬───────────────────────────────┘
-                           ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │ 3. IDF для каждого слова:                               │
-  │    IDF[w] = ln((N_docs + 1) / (doc_count(w) + 1)) + 1    │
-  └─────────────────────────────────────────────────────────┘
-```
-
-**Преобразование (transform):**
-
-```
-Вход: токены одного документа
-
-  ┌─────────────────────────────────────────────────────────┐
-  │ 1. TF: частота каждого токена в документе / всего токенов│
-  └────────────────────────┬───────────────────────────────┘
-                           ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │ 2. TF-IDF[i] = TF[i] * IDF[i] (только для слов из       │
-  │    словаря; неизвестные слова не дают вклад)              │
-  └────────────────────────┬───────────────────────────────┘
-                           ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │ 3. L2-нормализация: вектор делим на его норму            │
-  └─────────────────────────────────────────────────────────┘
-
-Выход: Vec<f64> длины = размер словаря
-```
+Output: `Vec<String>` of tokens.
 
 ---
 
-## 7. Расширенные признаки (TransactionFeatures)
+## 6. TF-IDF (fit and transform)
 
-Используются только при обучении/предсказании с `use_enhanced_features` и при наличии amount/date.
+**Fit (training):**
 
-```
-Комбинированный вектор = [ TF-IDF вектор ] + [ amount bucket ] + [ time ]
+- Count document frequency per term.
+- Build sorted vocabulary (term → index).
+- IDF[term] = ln((N_docs + 1) / (doc_count(term) + 1)) + 1 (smoothed).
 
-  ┌─────────────────────────────────────────────────────────┐
-  │ Amount bucket (one-hot, 5 компонент):                   │
-  │   VerySmall (<1k), Small (1k–5k), Medium (5k–20k),      │
-  │   Large (20k–100k), VeryLarge (100k+)                   │
-  └─────────────────────────────────────────────────────────┘
+**Transform (per document):**
 
-  ┌─────────────────────────────────────────────────────────┐
-  │ Time features (10 компонент):                           │
-  │   • День недели: one-hot 7                               │
-  │   • is_weekend: 0/1                                      │
-  │   • is_month_start (1–5): 0/1                            │
-  │   • is_month_end (26–31): 0/1                            │
-  └─────────────────────────────────────────────────────────┘
-```
+- TF = term count / total terms.
+- TF-IDF[i] = TF[i] * IDF[i] for terms in vocabulary.
+- L2-normalize the vector.
 
 ---
 
-## 8. Naive Bayes: обучение и предсказание
+## 7. Enhanced features (TransactionFeatures)
 
-**Обучение (fit):**
+Used only when `use_enhanced_features` and amount/date are available.
 
-```
-Вход: X (векторы признаков), y (category_id)
+- **Amount bucket** — One-hot over 5 buckets: VerySmall (<1k), Small (1k–5k), Medium (5k–20k), Large (20k–100k), VeryLarge (100k+).
+- **Time** — Weekday (7 one-hot), is_weekend, is_month_start (days 1–5), is_month_end (days 26–31).
 
-  ┌─────────────────────────────────────────────────────────┐
-  │ 1. Подсчёт числа примеров по классам: class_counts       │
-  └────────────────────────┬───────────────────────────────┘
-                           ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │ 2. Априорные вероятности (в логарифмах):                 │
-  │    log_prior[c] = ln(count[c] / N)                       │
-  └────────────────────────┬───────────────────────────────┘
-                           ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │ 3. Для каждого класса: сумма признаков по примерам       │
-  │    этого класса → сглаживание Лапласа (alpha=1):         │
-  │    log P(x_i | c) = ln((sum_i + alpha) / (total + alpha*D))│
-  └─────────────────────────────────────────────────────────┘
-```
-
-**Предсказание (predict):**
-
-```
-Вход: вектор признаков x
-
-  ┌─────────────────────────────────────────────────────────┐
-  │ 1. Для каждого класса c:                                 │
-  │    log P(c|x) ∝ log_prior[c] + Σ x_i * log P(x_i|c)      │
-  └────────────────────────┬───────────────────────────────┘
-                           ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │ 2. Класс с максимальным log P(c|x)                       │
-  └────────────────────────┬───────────────────────────────┘
-                           ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │ 3. Уверенность: преобразование log_prob в 0..1          │
-  │    (через softmax по априорам)                           │
-  └─────────────────────────────────────────────────────────┘
-
-Выход: (category_id, confidence)
-```
+Combined vector = [ TF-IDF ] + [ amount bucket ] + [ time ].
 
 ---
 
-## 9. Где вызывается модель
+## 8. Naive Bayes (fit and predict)
 
-| Место | Действие |
-|-------|----------|
-| **Settings** | Кнопка «Обучить модель» → `train_model`; отображение статуса (get_model_status). |
-| **Transactions** | При вводе заметки (debounce) вызывается `predict_category(note, amount, date)`; подставляется предложенная категория. |
-| **Import** | При разборе импорта для каждой транзакции вызывается `predict_category_internal(description)` для suggested_category_id и confidence. |
+**Fit:**
 
----
+- Class counts → log priors: log P(c) = ln(count[c] / N).
+- Per class: sum of feature vectors → Laplace smoothing → log P(x_i | c).
 
-## 10. Файлы модели и версии
+**Predict:**
 
-- **Путь к файлу:** `ProjectDirs::data_dir("finance-app") / "ml_model.json"`.
-- **Версия модели:** `CategoryModel::CURRENT_VERSION = 2`.
-- При загрузке проверяется: если версия в файле больше поддерживаемой, возвращается ошибка.
+- For each class: log P(c|x) ∝ log P(c) + Σ x_i * log P(x_i|c).
+- Class = argmax. Confidence from log-probabilities (e.g. softmax).
 
-В одном документе собрана вся логика: от загрузки данных и токенизации до TF-IDF, расширенных признаков, Naive Bayes и финального предсказания с порогом уверенности 0.3.
+Output: (category_id, confidence).
 
 ---
 
-## 11. Рекомендации по улучшению (анализ и практики)
+## 9. Where the model is used
 
-Ниже — направления улучшения на основе исследований и практик категоризации транзакций и текстовой классификации.
-
----
-
-### 11.1. Гибрид: правила + ML (самый эффективный шаг)
-
-**Практика:** 60–80% транзакций можно категоризировать правилами с высокой точностью; ML дообучать на оставшихся и пограничных случаях.
-
-**Идея:**
-
-```
-                    predict_category(note, amount, date)
-                                │
-                                ▼
-                    ┌───────────────────────────┐
-                    │ Правила (правило-движок)   │
-                    │ • Точное совпадение       │
-                    │   merchant/подстрока →    │
-                    │   category (из истории)    │
-                    │ • Регулярки по паттернам  │
-                    │   (например, "uber*",     │
-                    │    "kaspi *")             │
-                    └─────────────┬─────────────┘
-                          Найдено? │
-                    Да ────────────┼─── return (category, confidence=1.0)
-                                   │ Нет
-                                   ▼
-                    ┌───────────────────────────┐
-                    │ Текущий пайплайн ML       │
-                    │ (Tokenizer → TF-IDF → NB) │
-                    └───────────────────────────┘
-```
-
-**Реализация:**
-
-- Хранить в БД или в отдельном JSON маппинг: `(нормализованная подстрока или паттерн) → category_id`.
-- При обучении или при первом сохранении пользователем категории — добавлять правило «описание X → категория Y» (с лимитом длины/количества правил).
-- В `predict_category`: сначала проверять правила; если совпадение — возвращать результат без вызова модели.
-
-**Эффект:** меньше вызовов ML, стабильная категория для повторяющихся операций (одно и то же описание всегда в одну категорию).
+| Place | Action |
+|-------|--------|
+| **Settings** | “Train model” → `train_model`; show status via `get_model_status`. |
+| **Transactions** | On note input (debounced) → `predict_category(note, amount, date)`; show suggested category. |
+| **Import** | For each imported row, optional `predict_category_internal(description)` for suggested_category_id and confidence. |
 
 ---
 
-### 11.2. Предобработка текста: стемминг/лемматизация для русского и казахского
+## 10. Model file and version
 
-**Практика:** Нормализация словоформ уменьшает размер пространства признаков и улучшает качество при малом объёме данных.
-
-**Сейчас:** только нижний регистр + стоп-слова + отсечение коротких слов и чисел.
-
-**Улучшение:**
-
-- Добавить **стемминг** (например, алгоритм Snowball/Stemmer для русского), чтобы «продукты», «продуктов», «продуктам» сводились к одному корню.
-- Опционально — **лемматизация** (словарь или лёгкая модель), если найдётся подходящая Rust-библиотека без тяжёлых зависимостей.
-
-Размещать стеммы в **словаре TF-IDF** (как отдельные токены), чтобы один корень не размазывался по разным столбцам.
+- **Path:** e.g. `ProjectDirs::data_dir("finance-app") / "ml_model.json"` (or `category_model.json`).
+- **Version:** e.g. `CategoryModel::CURRENT_VERSION = 2`. If file version > supported, return error on load.
 
 ---
 
-### 11.3. Дисбаланс классов
+## 11. Improvement recommendations
 
-**Практика:** Naive Bayes сильно зависит от априорных вероятностей P(category). При дисбалансе (например, «Продукты» 50%, «Такси» 2%) модель перекосит в сторону частых классов.
+### 11.1 Hybrid: rules + ML
 
-**Варианты:**
+- **Idea:** 60–80% of transactions can be categorized by rules (exact/substring match from history); ML for the rest.
+- **Implementation:** Before ML, check a rule engine (e.g. normalized substring or pattern → category_id). On match, return (category, confidence=1.0). Otherwise run current ML pipeline.
+- **Effect:** Stable categories for repeated descriptions; fewer ML calls.
 
-- **Взвешивание классов при обучении:** при подсчёте `class_log_priors` использовать не `count[c]/N`, а взвешенные доли (например, обратно пропорционально частоте класса), чтобы редкие категории не «задавливались».
-- **Порог по уверенности по категориям:** для редких категорий временно снижать порог (например, 0.25 вместо 0.3), если в обучении по ним мало примеров — осторожно, чтобы не увеличить ложные срабатывания.
-- **Минимальное число примеров на класс:** при обучении отбрасывать или объединять категории с числом примеров меньше K (например, 3–5), чтобы не учить шум.
+### 11.2 Stemming / lemmatization (Russian, Kazakh)
 
----
+- **Current:** Lowercase + stop-words + length filter.
+- **Improvement:** Add stemming (e.g. Snowball) so different word forms map to one stem; optionally lemmatization if a light Rust solution exists. Use stems in TF-IDF vocabulary.
 
-### 11.4. Признаки и независимость (Naive Bayes)
+### 11.3 Class imbalance
 
-**Практика:** Naive Bayes предполагает условную независимость признаков. Дублирующая информация (например, день недели в one-hot и отдельно `is_weekend`) искажает вероятности.
+- **Issue:** Naive Bayes priors favor frequent categories.
+- **Options:** Class weights in training; per-class confidence thresholds; minimum samples per class or merge rare categories.
 
-**Рекомендации:**
+### 11.4 Feature independence (Naive Bayes)
 
-- Упростить **временные признаки**: оставить либо день недели (one-hot), либо только `is_weekend` + `is_month_start` + `is_month_end`, но не смешивать избыточно.
-- **Бакеты суммы** оставить: они слабо коррелируют с текстом и дают полезный сигнал.
-- При добавлении новых признаков избегать дублирования одной и той же информации в нескольких столбцах.
+- **Issue:** Redundant features (e.g. weekday one-hot + is_weekend) violate independence assumption.
+- **Recommendation:** Simplify time features (e.g. keep either weekday or is_weekend + month_start/end). Keep amount buckets; avoid duplicating the same information in multiple columns.
 
----
+### 11.5 Vocabulary quality
 
-### 11.5. Качество и отбор признаков
+- Min document frequency for terms (exclude hapax legomena).
+- Max vocabulary size (e.g. top-N by document frequency or IDF).
+- Expand domain stop-words (e.g. bank statement boilerplate).
 
-- **Минимальная частота слова в словаре:** при `fit` TF-IDF не включать слова, встречающиеся только в 1–2 документах (или реже порога), чтобы уменьшить шум и размер модели.
-- **Максимальный размер словаря:** ограничить, например, топ-N по документной частоте или по IDF, чтобы модель не раздувалась и быстрее работала.
-- **Список стоп-слов:** расширить доменными стоп-словами (как уже сделано с «оплата», «платеж»), убирая общие шаблонные слова из выписок банков.
+### 11.6 Confidence threshold and calibration
 
----
+- **Current:** Fixed threshold 0.3.
+- **Improvement:** Make threshold configurable (e.g. in app settings). Optionally calibrate confidence on a held-out set (e.g. temperature scaling) so reported confidence matches empirical accuracy.
 
-### 11.6. Калибровка уверенности и порог 0.3
+### 11.7 Alternative models (optional)
 
-**Сейчас:** уверенность получается из log-вероятностей через softmax по априорам; порог 0.3 — фиксированный.
+- **fastText (Rust)** — Fast training and inference, subword; good for short text.
+- **Embeddings + classifier** — Semantic similarity; e.g. fastembed-rs + k-NN or linear classifier.
+- **Sentence transformers** — High accuracy but typically Python; Rust would require FFI.
 
-**Улучшения:**
+**Practical path:** Keep TF-IDF + Naive Bayes as the main lightweight pipeline; add rule-based layer (11.1); improve preprocessing and imbalance (11.2–11.3). Consider fastText or embeddings later if more accuracy is needed.
 
-- Сделать порог **настраиваемым** (например, в настройках приложения или в конфиге модели): консервативные пользователи — выше (0.5), остальные — 0.3.
-- **Калибровка:** на отложенной выборке построить кривую «предсказанная уверенность vs. доля верных ответов»; при необходимости скорректировать формулу confidence (например, температурное масштабирование или простой монотонный маппинг), чтобы 0.7 действительно означало ~70% точности.
+### 11.8 Feedback and retraining
 
----
+- Log accept/reject of suggestions (locally) for future retraining or metrics.
+- Prompt “Retrain model?” after N new categorized transactions (e.g. +50).
+- On retrain, use all labeled transactions to preserve rare categories.
 
-### 11.7. Альтернативные и дополняющие модели (по желанию)
+### 11.9 Implementation priority
 
-| Подход | Плюсы | Минусы |
-|--------|--------|--------|
-| **fastText (Rust: crate `fasttext`)** | Быстрое обучение и инференс, subword, хорош для коротких текстов; можно обучить свою модель на тех же (note, category_id). | Нужно подключать нативный fastText, отдельный бинарник модели. |
-| **Эмбеддинги + классификатор** | Семантика (похожие формулировки ближе). Вариант: fastembed-rs + сохранённые эмбеддинги категорий или простой k-NN. | Больше зависимостей и размер модели; нужна стратегия обучения/обновления. |
-| **Sentence transformers (локально)** | 85–95% точности в обзорах по категоризации; офлайн. | Обычно Python; в Rust сложно без FFI. |
-
-Рациональная стратегия: оставить текущий TF-IDF + Naive Bayes как основной лёгкий пайплайн, добавить гибрид с правилами (п. 11.1) и улучшить препроцессинг и дисбаланс (п. 11.2–11.3). fastText или эмбеддинги рассматривать как следующий шаг, если понадобится заметный прирост качества.
-
----
-
-### 11.8. Обратная связь и переобучение
-
-- Сохранять **историю принятий/отклонений**: когда пользователь принимает предложенную категорию или выбирает другую, логировать (локально) для последующего дообучения или пересчёта метрик.
-- Периодически предлагать **«Переобучить модель»** после накопления N новых размеченных транзакций (уже есть кнопка в Настройках; можно добавить подсказку «рекомендуется после +50 транзакций»).
-- При переобучении использовать **все** размеченные транзакции (как сейчас), без удаления старых — чтобы не забывать редкие категории.
-
----
-
-### 11.9. Приоритет внедрения (кратко)
-
-1. **Высокий эффект, умеренная сложность:** гибрид правила + ML (11.1), дисбаланс классов (11.3), настраиваемый порог уверенности (11.6).
-2. **Средний эффект:** стемминг для RU/KZ (11.2), отсечение редких/частых слов в словаре (11.5), упрощение временных признаков (11.4).
-3. **Долгосрочно:** калибровка confidence, быстрый слой правил из «истории решений», при необходимости — fastText или эмбеддинги как второй классификатор.
+1. **High impact, moderate effort:** Rules + ML (11.1), class imbalance (11.3), configurable threshold (11.6).
+2. **Medium impact:** Stemming (11.2), vocabulary pruning (11.5), simpler time features (11.4).
+3. **Long term:** Confidence calibration, rule layer from “decision history,” optional second classifier (fastText or embeddings).

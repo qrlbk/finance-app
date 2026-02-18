@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Brain, RefreshCw, CheckCircle, XCircle, PiggyBank, Plus, Trash2, FileDown, FileUp, FileJson, FileSpreadsheet, ExternalLink, FileText, DollarSign } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { Brain, RefreshCw, CheckCircle, XCircle, PiggyBank, Plus, Trash2, FileDown, FileUp, FileJson, FileSpreadsheet, ExternalLink, FileText, DollarSign, Globe } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getTheme, setTheme, initTheme, type Theme } from "../stores/themeStore";
 import { api, type ModelStatus, type Budget, type Category, type ImportResult, type Account, type EmbeddedLlmStatus, type ExchangeRateRow } from "../lib/api";
@@ -7,9 +8,19 @@ import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { useToast } from "../components/ui/Toast";
 import { SettingsTheme } from "./settings/SettingsTheme";
 import { SettingsBackup } from "./settings/SettingsBackup";
+import i18n, { type Locale } from "../i18n";
+import { formatCurrency } from "../lib/format";
+
+const LOCALES: { code: Locale; labelKey: string }[] = [
+  { code: "kk", labelKey: "settings.languageKk" },
+  { code: "ru", labelKey: "settings.languageRu" },
+  { code: "en", labelKey: "settings.languageEn" },
+];
 
 export function Settings() {
+  const { t, i18n: i18nInstance } = useTranslation();
   const { showToast } = useToast();
+  const [locale, setLocale] = useState<Locale>(() => (i18nInstance.language as Locale) || "ru");
   const [theme, setThemeState] = useState<Theme>(getTheme());
   const [backupPath, setBackupPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -102,17 +113,17 @@ export function Settings() {
       const ollamaResult = await api.ensureOllamaInstalled();
       if (ollamaResult === "OpenedDownload") {
         showToast(
-          "Открыта страница загрузки Ollama. Установите Ollama, затем снова нажмите «Скачать модель».",
+          t("settings.ollamaOpened"),
           "info"
         );
         setEmbeddedDownloading(false);
         return;
       }
       await api.downloadAndRegisterEmbeddedModel();
-      showToast("Модель скачана и зарегистрирована", "success");
+      showToast(t("settings.modelDownloaded"), "success");
       await loadEmbeddedLlmStatus();
     } catch (e) {
-      showToast(String(e) || "Ошибка загрузки", "error");
+      showToast(String(e) || t("settings.downloadError"), "error");
     } finally {
       setEmbeddedDownloading(false);
     }
@@ -125,7 +136,7 @@ export function Settings() {
       showToast(result.message, result.success ? "success" : "error");
       await loadEmbeddedLlmStatus();
     } catch (e) {
-      showToast(String(e) || "Ошибка проверки", "error");
+      showToast(String(e) || t("settings.checkError"), "error");
     } finally {
       setEmbeddedTestingLlm(false);
     }
@@ -178,11 +189,11 @@ export function Settings() {
     e.preventDefault();
     const amount = parseFloat(budgetForm.amount);
     if (isNaN(amount) || amount <= 0) {
-      showToast("Введите положительную сумму", "error");
+      showToast(t("settings.enterAmount"), "error");
       return;
     }
     if (!budgetForm.category_id || !categories.some((c) => c.id === budgetForm.category_id)) {
-      showToast("Выберите категорию", "error");
+      showToast(t("settings.selectCategory"), "error");
       return;
     }
     try {
@@ -191,7 +202,7 @@ export function Settings() {
         amount,
         period: budgetForm.period,
       });
-      showToast("Бюджет создан", "success");
+      showToast(t("settings.budgetCreated"), "success");
       setShowBudgetForm(false);
       setBudgetForm({ category_id: categories[0]?.id ?? 0, amount: "", period: "monthly" });
       loadBudgets();
@@ -204,7 +215,7 @@ export function Settings() {
     if (deleteBudgetId === null) return;
     try {
       await api.deleteBudget(deleteBudgetId);
-      showToast("Бюджет удалён", "success");
+      showToast(t("settings.budgetDeleted"), "success");
       setDeleteBudgetId(null);
       loadBudgets();
     } catch (e) {
@@ -228,10 +239,10 @@ export function Settings() {
         category_id: exportForm.category_id || null,
       });
       setExportPath(path);
-      showToast("Данные экспортированы", "success");
+      showToast(t("settings.exported"), "success");
     } catch (e) {
       setError(String(e));
-      showToast("Ошибка экспорта", "error");
+      showToast(t("settings.exportError"), "error");
     } finally {
       setExporting(false);
     }
@@ -262,10 +273,10 @@ export function Settings() {
         setImportResult(result);
         setShowTrainPromptAfterImport(result.transactions_imported > 0);
         if (result.transactions_imported > 0) {
-          showToast(`Импортировано: ${result.transactions_imported} транзакций`, "success");
+          showToast(t("settings.importedToast", { count: result.transactions_imported }), "success");
         }
         if (result.errors.length > 0) {
-          showToast(`Ошибок при импорте: ${result.errors.length}`, "warning");
+          showToast(t("settings.importErrorsToast", { count: result.errors.length }), "warning");
         }
       }
     } catch (e) {
@@ -300,7 +311,7 @@ export function Settings() {
       }
     } catch (e) {
       setError(String(e));
-      showToast("Ошибка при обучении модели", "error");
+      showToast(t("settings.trainError"), "error");
     } finally {
       setTraining(false);
     }
@@ -316,7 +327,7 @@ export function Settings() {
     if (typeof e === "string") return e;
     if (e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string")
       return (e as { message: string }).message;
-    return "Неизвестная ошибка";
+    return t("common.unknownError");
   };
 
   const handleBackupExport = async () => {
@@ -325,7 +336,7 @@ export function Settings() {
       setBackupExporting(true);
       const path = await api.exportBackup();
       setBackupPath(path);
-      showToast("Резервная копия создана", "success");
+      showToast(t("settings.backupCreated"), "success");
     } catch (e) {
       const msg = getErrorMessage(e);
       setError(msg);
@@ -356,7 +367,7 @@ export function Settings() {
       const selected = await open({
         multiple: false,
         directory: false,
-        filters: [{ name: "База SQLite", extensions: ["db"] }],
+        filters: [{ name: t("settings.sqliteFilter"), extensions: ["db"] }],
       });
       if (selected != null && typeof selected === "string") {
         const path = selected.startsWith("file://") ? decodeURIComponent(selected.slice(7)) : selected;
@@ -376,7 +387,7 @@ export function Settings() {
       setRestoreInProgress(true);
       await api.restoreBackup(restoreConfirmPath);
       setRestoreConfirmPath(null);
-      showToast("Данные восстановлены. Перезагрузка…", "success");
+      showToast(t("settings.dataRestored"), "success");
       window.location.reload();
     } catch (e) {
       const msg = getErrorMessage(e);
@@ -393,7 +404,7 @@ export function Settings() {
       setResetInProgress(true);
       await api.resetDatabase();
       setResetDbConfirm(false);
-      showToast("База данных очищена. Перезагрузка…", "success");
+      showToast(t("settings.dbReset"), "success");
       window.location.reload();
     } catch (e) {
       const msg = getErrorMessage(e);
@@ -404,8 +415,42 @@ export function Settings() {
     }
   };
 
+  const handleLanguageChange = (code: Locale) => {
+    i18n.changeLanguage(code);
+    setLocale(code);
+  };
+
+  useEffect(() => {
+    const handler = (lng: string) => setLocale((lng as Locale) || "ru");
+    i18n.on("languageChanged", handler);
+    return () => i18n.off("languageChanged", handler);
+  }, []);
+
   return (
     <div className="space-y-8 max-w-xl">
+      <div>
+        <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
+          <Globe size={20} className="text-emerald-500" />
+          {t("settings.language")}
+        </h3>
+        <div className="flex gap-3 flex-wrap">
+          {LOCALES.map(({ code, labelKey }) => (
+            <button
+              key={code}
+              type="button"
+              onClick={() => handleLanguageChange(code)}
+              className={`flex items-center gap-2 px-4 py-3 rounded-xl border transition-colors ${
+                locale === code
+                  ? "bg-zinc-700 dark:bg-zinc-700 border-zinc-600 text-white"
+                  : "bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600"
+              }`}
+            >
+              {t(labelKey)}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <SettingsTheme theme={theme} onThemeChange={handleThemeChange} />
 
       <SettingsBackup
@@ -422,14 +467,14 @@ export function Settings() {
       <div>
         <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
           <DollarSign size={20} className="text-emerald-500" />
-          Валюта и курсы
+          {t("settings.currency")}
         </h3>
         <p className="text-sm text-zinc-400 mb-4">
-          Базовая валюта используется для общего баланса и отчётов. Добавьте курсы для конвертации (например, 1 USD = 450 KZT).
+          {t("settings.currencyDesc")}
         </p>
         <div className="p-4 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-4 mb-4">
           <div>
-            <label className="block text-xs text-zinc-400 mb-1">Базовая валюта</label>
+            <label className="block text-xs text-zinc-400 mb-1">{t("settings.baseCurrency")}</label>
             <select
               value={baseCurrency}
               onChange={async (e) => {
@@ -437,7 +482,7 @@ export function Settings() {
                 try {
                   await api.setBaseCurrency(v);
                   setBaseCurrencyState(v);
-                  showToast("Базовая валюта сохранена", "success");
+                  showToast(t("settings.baseCurrencySaved"), "success");
                 } catch (e) {
                   showToast(getErrorMessage(e), "error");
                 }
@@ -450,9 +495,9 @@ export function Settings() {
             </select>
           </div>
           <div>
-            <span className="block text-xs text-zinc-400 mb-2">Курсы валют (последние по дате)</span>
+            <span className="block text-xs text-zinc-400 mb-2">{t("settings.ratesList")}</span>
             {exchangeRates.length === 0 ? (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">Нет добавленных курсов. Добавьте курс ниже.</p>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("settings.noRates")}</p>
             ) : (
               <ul className="text-sm space-y-1 max-h-32 overflow-auto">
                 {exchangeRates.map((r, i) => (
@@ -468,7 +513,7 @@ export function Settings() {
               e.preventDefault();
               const rate = parseFloat(rateForm.rate);
               if (rateForm.from_currency === rateForm.to_currency || !Number.isFinite(rate) || rate <= 0) {
-                showToast("Укажите разные валюты и положительный курс", "error");
+                showToast(t("settings.rateInvalid"), "error");
                 return;
               }
               try {
@@ -479,7 +524,7 @@ export function Settings() {
                   rate,
                   date: rateForm.date,
                 });
-                showToast("Курс добавлен", "success");
+                showToast(t("settings.rateAdded"), "success");
                 setRateForm(prev => ({ ...prev, rate: "" }));
                 loadCurrencySettings();
               } catch (err) {
@@ -491,7 +536,7 @@ export function Settings() {
             className="flex flex-wrap items-end gap-3"
           >
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Из</label>
+              <label className="block text-xs text-zinc-400 mb-1">{t("settings.from")}</label>
               <select
                 value={rateForm.from_currency}
                 onChange={(e) => setRateForm(f => ({ ...f, from_currency: e.target.value }))}
@@ -503,7 +548,7 @@ export function Settings() {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">В</label>
+              <label className="block text-xs text-zinc-400 mb-1">{t("settings.to")}</label>
               <select
                 value={rateForm.to_currency}
                 onChange={(e) => setRateForm(f => ({ ...f, to_currency: e.target.value }))}
@@ -515,7 +560,7 @@ export function Settings() {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Курс (1 из = N в)</label>
+              <label className="block text-xs text-zinc-400 mb-1">{t("settings.rateLabel")}</label>
               <input
                 type="number"
                 step="any"
@@ -527,7 +572,7 @@ export function Settings() {
               />
             </div>
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Дата</label>
+              <label className="block text-xs text-zinc-400 mb-1">{t("settings.date")}</label>
               <input
                 type="date"
                 value={rateForm.date}
@@ -540,7 +585,7 @@ export function Settings() {
               disabled={addingRate}
               className="px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 text-sm"
             >
-              {addingRate ? "Добавление…" : "Добавить курс"}
+              {addingRate ? t("settings.addingRate") : t("settings.addRate")}
             </button>
           </form>
         </div>
@@ -550,38 +595,38 @@ export function Settings() {
       <div>
         <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
           <FileDown size={20} className="text-blue-500" />
-          Экспорт и импорт данных
+          {t("settings.exportImport")}
         </h3>
         <p className="text-sm text-zinc-400 mb-4">
-          Экспорт: выберите формат (Excel, CSV, JSON) и при необходимости фильтры — файл сохранится и можно открыть папку. Импорт: нажмите «Импорт», выберите файл CSV или JSON (лучше всего — ранее экспортированный из этого приложения).
+          {t("settings.exportImportDesc")}
         </p>
 
         {exportPath && (
           <div className="p-4 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-4">
             <div className="flex items-center justify-between gap-4">
-              <span className="text-sm break-all">Файл сохранён: {exportPath}</span>
+              <span className="text-sm break-all">{t("settings.fileSaved", { path: exportPath })}</span>
               <button
                 onClick={() => openContainingFolder(exportPath)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition text-sm shrink-0"
               >
                 <ExternalLink size={14} />
-                Открыть папку
+                {t("common.openFolder")}
               </button>
             </div>
           </div>
         )}
 
-        {/* Настройки импорта */}
+        {/* Import options */}
         <div className="flex flex-wrap items-center gap-4 mb-4 p-3 rounded-lg bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700">
-          <span className="text-sm text-zinc-500 dark:text-zinc-400">При импорте:</span>
+          <span className="text-sm text-zinc-500 dark:text-zinc-400">{t("settings.importOptions")}</span>
           <div className="flex items-center gap-2">
-            <label className="text-sm text-zinc-600 dark:text-zinc-300">Счёт по умолчанию</label>
+            <label className="text-sm text-zinc-600 dark:text-zinc-300">{t("settings.defaultAccount")}</label>
             <select
               value={importDefaultAccountId ?? ""}
               onChange={(e) => setImportDefaultAccountId(e.target.value ? Number(e.target.value) : null)}
               className="px-3 py-1.5 rounded-lg bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white text-sm"
             >
-              <option value="">Не выбран</option>
+              <option value="">{t("settings.notSelected")}</option>
               {accounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>{acc.name}</option>
               ))}
@@ -594,7 +639,7 @@ export function Settings() {
               onChange={(e) => setImportSkipDuplicates(e.target.checked)}
               className="w-4 h-4 rounded"
             />
-            Пропускать дубликаты
+            {t("settings.skipDuplicates")}
           </label>
         </div>
 
@@ -604,22 +649,22 @@ export function Settings() {
               ? "bg-amber-500/10 text-amber-400 border-amber-500/20" 
               : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
           }`}>
-            <p>Импортировано транзакций: {importResult.transactions_imported}</p>
+            <p>{t("settings.importedCount", { count: importResult.transactions_imported })}</p>
             {(importResult.duplicates_skipped ?? 0) > 0 && (
-              <p className="text-sm mt-1">Пропущено дубликатов: {importResult.duplicates_skipped}</p>
+              <p className="text-sm mt-1">{t("settings.duplicatesSkipped", { count: importResult.duplicates_skipped })}</p>
             )}
             {(importResult.total_parsed ?? 0) > 0 && (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Обработано строк: {importResult.total_parsed}</p>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{t("settings.rowsProcessed", { count: importResult.total_parsed })}</p>
             )}
             {importResult.errors.length > 0 && (
               <details className="mt-2">
-                <summary className="cursor-pointer text-sm">Ошибки ({importResult.errors.length})</summary>
+                <summary className="cursor-pointer text-sm">{t("settings.errorsCount", { count: importResult.errors.length })}</summary>
                 <ul className="mt-2 text-xs space-y-1 max-h-32 overflow-auto">
                   {importResult.errors.slice(0, 10).map((err, i) => (
                     <li key={i}>{err}</li>
                   ))}
                   {importResult.errors.length > 10 && (
-                    <li>...и ещё {importResult.errors.length - 10} ошибок</li>
+                    <li>{t("settings.andMoreErrors", { count: importResult.errors.length - 10 })}</li>
                   )}
                 </ul>
               </details>
@@ -629,7 +674,7 @@ export function Settings() {
 
         {showTrainPromptAfterImport && importResult && importResult.transactions_imported > 0 && (
           <div className="p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 mb-4">
-            <p className="text-zinc-700 dark:text-zinc-300 mb-3">Обучить модель по новым данным?</p>
+            <p className="text-zinc-700 dark:text-zinc-300 mb-3">{t("settings.trainAfterImport")}</p>
             <div className="flex gap-3">
               <button
                 type="button"
@@ -637,10 +682,10 @@ export function Settings() {
                   try {
                     setTrainingAfterImport(true);
                     const res = await api.trainModel();
-                    showToast(res.message || "Модель обучена", res.success ? "success" : "info");
+                    showToast(res.message || t("import.modelTrained"), res.success ? "success" : "info");
                     setShowTrainPromptAfterImport(false);
                   } catch {
-                    showToast("Ошибка обучения модели", "error");
+                    showToast(t("settings.trainError"), "error");
                   } finally {
                     setTrainingAfterImport(false);
                   }
@@ -648,14 +693,14 @@ export function Settings() {
                 disabled={trainingAfterImport}
                 className="px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50"
               >
-                {trainingAfterImport ? "Обучение…" : "Обучить"}
+                {trainingAfterImport ? t("settings.training") : t("settings.train")}
               </button>
               <button
                 type="button"
                 onClick={() => setShowTrainPromptAfterImport(false)}
                 className="px-4 py-2 rounded-lg bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-600"
               >
-                Позже
+                {t("common.later")}
               </button>
             </div>
           </div>
@@ -664,7 +709,7 @@ export function Settings() {
         {showExportForm ? (
           <form onSubmit={handleExport} className="p-4 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-4 mb-4">
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Формат</label>
+              <label className="block text-xs text-zinc-400 mb-1">{t("settings.format")}</label>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -707,33 +752,33 @@ export function Settings() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Счёт (все)</label>
+                <label className="block text-xs text-zinc-400 mb-1">{t("settings.accountAll")}</label>
                 <select
                   value={exportForm.account_id}
                   onChange={(e) => setExportForm(f => ({ ...f, account_id: Number(e.target.value) }))}
                   className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white text-sm"
                 >
-                  <option value={0}>Все счета</option>
+                  <option value={0}>{t("settings.allAccounts")}</option>
                   {accounts.map((acc) => (
                     <option key={acc.id} value={acc.id}>{acc.name}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Категория (все)</label>
+                <label className="block text-xs text-zinc-400 mb-1">{t("settings.categoryAll")}</label>
                 <select
                   value={exportForm.category_id}
                   onChange={(e) => setExportForm(f => ({ ...f, category_id: Number(e.target.value) }))}
                   className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white text-sm"
                 >
-                  <option value={0}>Все категории</option>
+                  <option value={0}>{t("settings.allCategories")}</option>
                   {allCategories.map((cat) => (
                     <option key={cat.id} value={cat.id}>{cat.name}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Дата от (опц.)</label>
+                <label className="block text-xs text-zinc-400 mb-1">{t("settings.dateFrom")}</label>
                 <input
                   type="date"
                   value={exportForm.date_from}
@@ -742,7 +787,7 @@ export function Settings() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Дата до (опц.)</label>
+                <label className="block text-xs text-zinc-400 mb-1">{t("settings.dateTo")}</label>
                 <input
                   type="date"
                   value={exportForm.date_to}
@@ -761,7 +806,7 @@ export function Settings() {
                     onChange={(e) => setExportForm(f => ({ ...f, include_accounts: e.target.checked }))}
                     className="w-4 h-4 rounded"
                   />
-                  Включить счета
+                  {t("settings.includeAccounts")}
                 </label>
                 <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300">
                   <input
@@ -770,7 +815,7 @@ export function Settings() {
                     onChange={(e) => setExportForm(f => ({ ...f, include_categories: e.target.checked }))}
                     className="w-4 h-4 rounded"
                   />
-                  Включить категории
+                  {t("settings.includeCategories")}
                 </label>
               </div>
             )}
@@ -782,14 +827,14 @@ export function Settings() {
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 btn-transition disabled:opacity-50"
               >
                 <FileDown size={18} className={exporting ? "animate-pulse" : ""} />
-                {exporting ? "Экспорт..." : "Экспортировать"}
+                {exporting ? t("settings.exportProgress") : t("settings.exporting")}
               </button>
               <button
                 type="button"
                 onClick={() => setShowExportForm(false)}
                 className="px-4 py-2 rounded-lg bg-zinc-600 text-white hover:bg-zinc-500 btn-transition"
               >
-                Отмена
+                {t("common.cancel")}
               </button>
             </div>
           </form>
@@ -800,14 +845,14 @@ export function Settings() {
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
             >
               <FileDown size={18} />
-              Экспорт
+              {t("settings.export")}
             </button>
             <button
               onClick={handleImportClick}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-600 text-white hover:bg-zinc-500 transition-colors"
             >
               <FileUp size={18} />
-              Импорт
+              {t("settings.import")}
             </button>
           </div>
         )}
@@ -817,52 +862,52 @@ export function Settings() {
       <div>
         <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
           <Brain size={20} className="text-purple-500" />
-          Машинное обучение
+          {t("settings.ml")}
         </h3>
         <p className="text-sm text-zinc-400 mb-4">
-          Модель предсказывает категории для транзакций на основе их описания. Чем больше транзакций с заполненными категориями и заметками, тем точнее предсказания.
+          {t("settings.mlDesc")}
         </p>
 
         <div className="p-4 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-4">
           {mlLoading ? (
             <div className="flex items-center gap-2 text-zinc-400">
               <RefreshCw size={16} className="animate-spin" />
-              <span>Загрузка статуса...</span>
+              <span>{t("settings.loadingStatus")}</span>
             </div>
           ) : modelStatus ? (
             <>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <span className="text-xs text-zinc-400 block mb-1">Статус модели</span>
+                  <span className="text-xs text-zinc-400 block mb-1">{t("settings.modelStatus")}</span>
                   <div className="flex items-center gap-2">
                     {modelStatus.trained ? (
                       <>
                         <CheckCircle size={16} className="text-emerald-500" />
-                        <span className="text-emerald-500 font-medium">Обучена</span>
+                        <span className="text-emerald-500 font-medium">{t("settings.modelTrained")}</span>
                       </>
                     ) : (
                       <>
                         <XCircle size={16} className="text-zinc-400" />
-                        <span className="text-zinc-400">Не обучена</span>
+                        <span className="text-zinc-400">{t("settings.modelNotTrained")}</span>
                       </>
                     )}
                   </div>
                 </div>
                 {modelStatus.trained && modelStatus.trained_at && (
                   <div>
-                    <span className="text-xs text-zinc-400 block mb-1">Дата обучения</span>
+                    <span className="text-xs text-zinc-400 block mb-1">{t("settings.trainedAt")}</span>
                     <span className="text-zinc-600 dark:text-zinc-300">{modelStatus.trained_at}</span>
                   </div>
                 )}
                 {modelStatus.sample_count !== null && modelStatus.sample_count > 0 && (
                   <div>
-                    <span className="text-xs text-zinc-400 block mb-1">Транзакций в модели</span>
+                    <span className="text-xs text-zinc-400 block mb-1">{t("settings.transactionsInModel")}</span>
                     <span className="text-zinc-600 dark:text-zinc-300">{modelStatus.sample_count}</span>
                   </div>
                 )}
                 {modelStatus.accuracy !== null && (
                   <div>
-                    <span className="text-xs text-zinc-400 block mb-1">Точность</span>
+                    <span className="text-xs text-zinc-400 block mb-1">{t("settings.accuracy")}</span>
                     <span className="text-zinc-600 dark:text-zinc-300">~{Math.round(modelStatus.accuracy * 100)}%</span>
                   </div>
                 )}
@@ -870,7 +915,7 @@ export function Settings() {
 
               <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700 space-y-2">
                 <div>
-                  <label className="text-xs text-zinc-400 block mb-1">Порог уверенности</label>
+                  <label className="text-xs text-zinc-400 block mb-1">{t("settings.confidenceThreshold")}</label>
                   <div className="flex items-center gap-3">
                     <input
                       type="range"
@@ -892,7 +937,7 @@ export function Settings() {
                     </span>
                   </div>
                   <p className="text-xs text-zinc-400 mt-1">
-                    Чем выше — тем реже показываются подсказки, но они надёжнее
+                    {t("settings.confidenceHint")}
                   </p>
                 </div>
                 <button
@@ -905,16 +950,16 @@ export function Settings() {
                   }`}
                 >
                   <RefreshCw size={18} className={training ? "animate-spin" : ""} />
-                  {training ? "Обучение..." : modelStatus.trained ? "Переобучить модель" : "Обучить модель"}
+                  {training ? t("settings.trainingProgress") : modelStatus.trained ? t("settings.retrainModel") : t("settings.trainModel")}
                 </button>
                 <p className="text-xs text-zinc-400 mt-2">
-                  Требуется минимум 20 транзакций с заполненными категориями и заметками
+                  {t("settings.minTransactions")}
                 </p>
                 {modelStatus.transactions_with_categories_count != null &&
                   modelStatus.transactions_with_categories_count < 20 &&
                   (modelStatus.transactions_with_note_no_category ?? 0) > 0 && (
                     <p className="text-sm text-amber-600 dark:text-amber-400 mt-2">
-                      У вас {modelStatus.transactions_with_note_no_category} транзакций с описанием без категории. Назначьте категории хотя бы 20 из них в разделе «Транзакции», затем обучите модель.
+                      {t("settings.transactionsNoCategory", { count: modelStatus.transactions_with_note_no_category ?? 0 })}
                     </p>
                   )}
                 {modelStatus.trained &&
@@ -922,21 +967,21 @@ export function Settings() {
                   modelStatus.transactions_with_categories_count != null &&
                   modelStatus.transactions_with_categories_count - modelStatus.sample_count > 50 && (
                     <p className="text-sm text-amber-600 dark:text-amber-400 mt-2">
-                      Добавлено много новых транзакций. Рекомендуем переобучить модель для лучших предсказаний.
+                      {t("settings.retrainSuggestion")}
                     </p>
                   )}
               </div>
             </>
           ) : (
-            <div className="text-zinc-400">Не удалось загрузить статус модели</div>
+            <div className="text-zinc-400">{t("settings.modelStatusError")}</div>
           )}
         </div>
 
-        {/* LLM — подсказки категорий: встроенная модель или Ollama вручную */}
+        {/* LLM */}
         <div className="mt-6 p-4 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-4">
-          <h4 className="font-medium text-zinc-800 dark:text-zinc-200">Подсказки категорий (LLM)</h4>
+          <h4 className="font-medium text-zinc-800 dark:text-zinc-200">{t("settings.llm")}</h4>
           <p className="text-sm text-zinc-400">
-            Поставьте галочку, выберите «Встроенная модель» и нажмите «Скачать модель» — Ollama установится автоматически (если ещё не установлен), затем скачается и настроится модель (~390 МБ).
+            {t("settings.llmDesc")}
           </p>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -949,7 +994,7 @@ export function Settings() {
               }}
               className="rounded border-zinc-300 dark:border-zinc-600 text-purple-600 focus:ring-purple-500"
             />
-            <span className="text-sm text-zinc-700 dark:text-zinc-300">Использовать LLM для подсказки категорий</span>
+            <span className="text-sm text-zinc-700 dark:text-zinc-300">{t("settings.useLLM")}</span>
           </label>
           {llmEnabled && (
             <>
@@ -965,7 +1010,7 @@ export function Settings() {
                     }}
                     className="text-purple-600 focus:ring-purple-500"
                   />
-                  <span className="text-sm text-zinc-700 dark:text-zinc-300">Встроенная модель</span>
+                  <span className="text-sm text-zinc-700 dark:text-zinc-300">{t("settings.embeddedModel")}</span>
                 </label>
                 {useEmbeddedLlm && embeddedLlmStatus && (
                   <div className="pl-6 text-sm space-y-2">
@@ -973,16 +1018,16 @@ export function Settings() {
                       <p className="text-amber-600 dark:text-amber-400">{embeddedLlmStatus.error}</p>
                     )}
                     {embeddedLlmStatus.downloaded && embeddedLlmStatus.registered_in_ollama && embeddedLlmStatus.ollama_reachable && !embeddedLlmStatus.error && (
-                      <p className="text-emerald-600 dark:text-emerald-400">Модель готова к работе.</p>
+                      <p className="text-emerald-600 dark:text-emerald-400">{t("settings.modelReady")}</p>
                     )}
                     {embeddedLlmStatus.download_progress != null && (
-                      <p className="text-zinc-500">Скачивание: {embeddedLlmStatus.download_progress}%</p>
+                      <p className="text-zinc-500">{t("settings.downloadProgress", { percent: embeddedLlmStatus.download_progress })}</p>
                     )}
                     {!embeddedLlmStatus.downloaded && (
-                      <p className="text-zinc-500">Нажмите «Скачать модель» — Ollama установится при необходимости, затем загрузится модель (~390 МБ). Запустите Ollama перед использованием.</p>
+                      <p className="text-zinc-500">{t("settings.downloadHint")}</p>
                     )}
                     {embeddedLlmStatus.downloaded && !embeddedLlmStatus.ollama_reachable && !embeddedLlmStatus.error && (
-                      <p className="text-zinc-500">Модель скачана. Запустите Ollama и нажмите «Проверить».</p>
+                      <p className="text-zinc-500">{t("settings.downloadedStartOllama")}</p>
                     )}
                     {(!embeddedLlmStatus.downloaded || !embeddedLlmStatus.registered_in_ollama) && (
                       <button
@@ -991,7 +1036,7 @@ export function Settings() {
                         disabled={embeddedDownloading}
                         className="px-3 py-1.5 rounded-lg bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-50"
                       >
-                        {embeddedDownloading ? "Скачивание…" : "Скачать модель"}
+                        {embeddedDownloading ? t("settings.downloading") : t("settings.downloadModel")}
                       </button>
                     )}
                     {(embeddedLlmStatus.downloaded && embeddedLlmStatus.registered_in_ollama) && (
@@ -1001,7 +1046,7 @@ export function Settings() {
                         disabled={embeddedTestingLlm}
                         className="ml-2 px-3 py-1.5 rounded-lg bg-zinc-600 text-white text-sm hover:bg-zinc-500 disabled:opacity-50"
                       >
-                        {embeddedTestingLlm ? "Проверка…" : "Проверить"}
+                        {embeddedTestingLlm ? t("settings.checking") : t("settings.check")}
                       </button>
                     )}
                   </div>
@@ -1017,12 +1062,12 @@ export function Settings() {
                     }}
                     className="text-purple-600 focus:ring-purple-500"
                   />
-                  <span className="text-sm text-zinc-700 dark:text-zinc-300">Ollama вручную (URL и модель)</span>
+                  <span className="text-sm text-zinc-700 dark:text-zinc-300">{t("settings.ollamaManual")}</span>
                 </label>
                 {!useEmbeddedLlm && (
                   <div className="pl-6 grid gap-3 sm:grid-cols-2">
                     <div>
-                      <label className="text-xs text-zinc-400 block mb-1">URL Ollama</label>
+                      <label className="text-xs text-zinc-400 block mb-1">{t("settings.ollamaUrl")}</label>
                       <input
                         type="text"
                         value={ollamaUrl}
@@ -1035,7 +1080,7 @@ export function Settings() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-zinc-400 block mb-1">Модель</label>
+                      <label className="text-xs text-zinc-400 block mb-1">{t("settings.model")}</label>
                       <input
                         type="text"
                         value={ollamaModel}
@@ -1059,10 +1104,10 @@ export function Settings() {
       <div>
         <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
           <PiggyBank size={20} className="text-emerald-500" />
-          Бюджеты по категориям
+          {t("settings.budgets")}
         </h3>
         <p className="text-sm text-zinc-400 mb-4">
-          Установите лимиты расходов по категориям. Вы получите уведомления при достижении 80% и 100% бюджета.
+          {t("settings.budgetsDesc")}
         </p>
 
         {/* Budget List */}
@@ -1077,7 +1122,7 @@ export function Settings() {
                   <div>
                     <span className="font-medium">{budget.category_name}</span>
                     <span className="text-xs text-zinc-400 ml-2">
-                      {budget.period === "monthly" ? "в месяц" : budget.period === "weekly" ? "в неделю" : "в год"}
+                      {budget.period === "monthly" ? t("settings.perMonth") : budget.period === "weekly" ? t("settings.perWeek") : t("settings.perYear")}
                     </span>
                   </div>
                   <button
@@ -1104,7 +1149,7 @@ export function Settings() {
                 
                 <div className="flex justify-between text-sm">
                   <span className="text-zinc-500 dark:text-zinc-400">
-                    {new Intl.NumberFormat("ru-KZ").format(budget.spent)} ₸ / {new Intl.NumberFormat("ru-KZ").format(budget.amount)} ₸
+                    {formatCurrency(budget.spent)} ₸ / {formatCurrency(budget.amount)} ₸
                   </span>
                   <span className={`font-medium ${
                     budget.percent_used >= 100
@@ -1126,7 +1171,7 @@ export function Settings() {
           <form onSubmit={handleCreateBudget} className="p-4 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-4">
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Категория</label>
+                <label className="block text-xs text-zinc-400 mb-1">{t("settings.category")}</label>
                 <select
                   value={budgetForm.category_id}
                   onChange={(e) => setBudgetForm((f) => ({ ...f, category_id: +e.target.value }))}
@@ -1139,7 +1184,7 @@ export function Settings() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Лимит (₸)</label>
+                <label className="block text-xs text-zinc-400 mb-1">{t("settings.limit")}</label>
                 <input
                   type="number"
                   min="0"
@@ -1152,15 +1197,15 @@ export function Settings() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Период</label>
+                <label className="block text-xs text-zinc-400 mb-1">{t("settings.period")}</label>
                 <select
                   value={budgetForm.period}
                   onChange={(e) => setBudgetForm((f) => ({ ...f, period: e.target.value }))}
                   className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white text-sm"
                 >
-                  <option value="weekly">Еженедельно</option>
-                  <option value="monthly">Ежемесячно</option>
-                  <option value="yearly">Ежегодно</option>
+                  <option value="weekly">{t("settings.weekly")}</option>
+                  <option value="monthly">{t("settings.monthly")}</option>
+                  <option value="yearly">{t("settings.yearly")}</option>
                 </select>
               </div>
             </div>
@@ -1169,14 +1214,14 @@ export function Settings() {
                 type="submit"
                 className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition text-sm"
               >
-                Создать
+                {t("settings.create")}
               </button>
               <button
                 type="button"
                 onClick={() => setShowBudgetForm(false)}
                 className="px-4 py-2 rounded-lg bg-zinc-600 text-white hover:bg-zinc-500 btn-transition text-sm"
               >
-                Отмена
+                {t("common.cancel")}
               </button>
             </div>
           </form>
@@ -1188,45 +1233,45 @@ export function Settings() {
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition disabled:opacity-50 disabled:pointer-events-none"
           >
             <Plus size={18} />
-            Добавить бюджет
+            {t("settings.addBudget")}
           </button>
         )}
         {categories.length === 0 && (
           <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-2">
-            Сначала добавьте расходные категории в разделе «Категории».
+            {t("settings.addCategoriesFirst")}
           </p>
         )}
       </div>
 
       <ConfirmDialog
         open={restoreConfirmPath !== null}
-        title="Восстановить из копии?"
-        message="Убедитесь, что бэкап создан этим приложением. Иначе данные могут не открыться. Текущие данные будут заменены. Продолжить?"
-        confirmLabel="Восстановить"
+        title={t("settings.restoreConfirmTitle")}
+        message={t("settings.restoreConfirmMessage")}
+        confirmLabel={t("settings.restore")}
         variant="danger"
         loading={restoreInProgress}
-        loadingConfirmLabel="Восстановление…"
+        loadingConfirmLabel={t("settings.restoring")}
         onConfirm={handleRestoreConfirm}
         onCancel={() => !restoreInProgress && setRestoreConfirmPath(null)}
       />
 
       <ConfirmDialog
         open={resetDbConfirm}
-        title="Сбросить базу данных?"
-        message="Будут удалены все счета, транзакции, категории, бюджеты и правила текущего пользователя. Останутся только категории по умолчанию. Это действие необратимо."
-        confirmLabel="Сбросить"
+        title={t("settings.resetConfirmTitle")}
+        message={t("settings.resetConfirmMessage")}
+        confirmLabel={t("settings.reset")}
         variant="danger"
         loading={resetInProgress}
-        loadingConfirmLabel="Сброс…"
+        loadingConfirmLabel={t("settings.resetting")}
         onConfirm={handleResetDbConfirm}
         onCancel={() => !resetInProgress && setResetDbConfirm(false)}
       />
 
       <ConfirmDialog
         open={deleteBudgetId !== null}
-        title="Удалить бюджет?"
-        message="Эта операция необратима."
-        confirmLabel="Удалить"
+        title={t("settings.deleteBudgetConfirmTitle")}
+        message={t("settings.deleteBudgetConfirmMessage")}
+        confirmLabel={t("common.delete")}
         variant="danger"
         onConfirm={handleDeleteBudget}
         onCancel={() => setDeleteBudgetId(null)}

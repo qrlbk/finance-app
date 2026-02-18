@@ -1,27 +1,21 @@
 import { useEffect, useState, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Plus, Pencil, Trash2, Search, Filter, ArrowRightLeft, ChevronDown, Calendar, CreditCard, Lightbulb, Check, X } from "lucide-react";
 import { api, type TransactionWithDetails, type Account, type Category, type CategoryPrediction } from "../lib/api";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { EmptyState } from "../components/ui/EmptyState";
 import { useToast } from "../components/ui/Toast";
 import { useDebounce } from "../hooks/useDebounce";
+import { formatCurrency, formatDate } from "../lib/format";
 
 function formatAmount(amount: number, type: string) {
   const abs = Math.abs(amount);
-  const formatted = new Intl.NumberFormat("ru-KZ", {
-    style: "decimal",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(abs);
+  const formatted = formatCurrency(abs);
   return type === "income" ? `+${formatted}` : `-${formatted}`;
 }
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr + "T12:00:00").toLocaleDateString("ru-KZ", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+function formatDateDisplay(dateStr: string) {
+  return formatDate(new Date(dateStr + "T12:00:00"));
 }
 
 // Get date presets
@@ -44,6 +38,7 @@ function getDatePresets() {
 }
 
 export function Transactions() {
+  const { t } = useTranslation();
   const { showToast } = useToast();
   const [transactions, setTransactions] = useState<TransactionWithDetails[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -263,7 +258,7 @@ const emptyFilters = {
           note: form.note || null,
           date: form.date,
         });
-        showToast("Транзакция обновлена", "success");
+        showToast(t("transactions.updated"), "success");
       } else {
         await api.createTransaction({
           account_id: form.account_id,
@@ -273,7 +268,7 @@ const emptyFilters = {
           note: form.note || null,
           date: form.date,
         });
-        showToast("Транзакция добавлена", "success");
+        showToast(t("transactions.added"), "success");
       }
       setForm({
         account_id: accounts[0]?.id ?? 0,
@@ -288,7 +283,7 @@ const emptyFilters = {
       loadData();
     } catch (e) {
       setError(String(e));
-      showToast("Ошибка при сохранении", "error");
+      showToast(t("transactions.errorSave"), "error");
     }
   };
 
@@ -319,12 +314,12 @@ const emptyFilters = {
         setDeleteConfirmId(null);
         setDeletingId(null);
         loadData();
-        showToast("Транзакция удалена", "success");
+        showToast(t("transactions.deleted"), "success");
       }, 300);
     } catch (e) {
       setError(String(e));
       setDeletingId(null);
-      showToast("Ошибка при удалении", "error");
+      showToast(t("transactions.errorDelete"), "error");
     }
   };
 
@@ -350,10 +345,10 @@ const emptyFilters = {
         note: "",
       });
       loadData();
-      showToast("Перевод выполнен", "success");
+      showToast(t("transactions.transferDone"), "success");
     } catch (err) {
       setError(String(err));
-      showToast("Ошибка при переводе", "error");
+      showToast(t("transactions.transferError"), "error");
     }
   };
 
@@ -381,10 +376,10 @@ const emptyFilters = {
             : t
         )
       );
-      showToast("Категория назначена", "success");
+      showToast(t("transactions.categoryAssigned"), "success");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      showToast(msg ? `Ошибка назначения категории: ${msg}` : "Ошибка назначения категории", "error");
+      showToast(msg ? t("transactions.categoryAssignErrorMsg", { msg }) : t("transactions.categoryAssignError"), "error");
     } finally {
       setAssigningCategoryId(null);
     }
@@ -394,7 +389,7 @@ const emptyFilters = {
     const llmEnabled = localStorage.getItem("llm_enabled") === "true";
     const useEmbedded = localStorage.getItem("llm_use_embedded") === "true";
     if (!llmEnabled && !useEmbedded) {
-      showToast("Включите LLM в Настройках: «Подсказки категорий» → отметьте «Встроенная модель» или «Ollama вручную».", "info");
+      showToast(t("transactions.enableLLM"), "info");
       return;
     }
     setAutoAssigning(true);
@@ -405,7 +400,7 @@ const emptyFilters = {
       });
       const uncategorized = allUncategorized.filter((tx) => (tx.note?.trim()?.length ?? 0) >= 2);
       if (uncategorized.length === 0) {
-        showToast("Нет транзакций без категории с заметкой для подсказки", "info");
+        showToast(t("transactions.noUncategorized"), "info");
         setAutoAssigning(false);
         return;
       }
@@ -466,7 +461,7 @@ const emptyFilters = {
         }
       }
       if (assigned > 0) {
-        showToast(`Назначено категорий: ${assigned} из ${uncategorized.length}`, "success");
+        showToast(t("transactions.assignedCount", { assigned, total: uncategorized.length }), "success");
         const filterParams = {
           limit: PAGE_SIZE,
           offset: 0,
@@ -482,12 +477,9 @@ const emptyFilters = {
         setTransactions(txs);
         setHasMore(txs.length === PAGE_SIZE);
       } else if (lastError) {
-        showToast(`Подсказки недоступны: ${lastError} Запустите Ollama или нажмите «Проверить» в Настройках.`, "error");
+        showToast(t("transactions.suggestionsError", { error: lastError }), "error");
       } else {
-        showToast(
-          "Модель не подобрала категории. Убедитесь, что Ollama запущен (кнопка «Проверить» в Настройках) и что у транзакций есть понятные описания.",
-          "info"
-        );
+        showToast(t("transactions.noSuggestions"), "info");
       }
     } finally {
       setAutoAssigning(false);
@@ -503,7 +495,7 @@ const emptyFilters = {
       )}
 
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-medium">Транзакции</h3>
+        <h3 className="text-lg font-medium">{t("transactions.title")}</h3>
         <div className="flex gap-2">
           <button
             type="button"
@@ -521,7 +513,7 @@ const emptyFilters = {
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-600 text-white hover:bg-zinc-500 btn-transition"
           >
             <ArrowRightLeft size={18} />
-            <span className="hidden sm:inline">Перевод</span>
+            <span className="hidden sm:inline">{t("transactions.transferBtn")}</span>
           </button>
           <button
             onClick={() => {
@@ -539,7 +531,7 @@ const emptyFilters = {
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
           >
             <Plus size={18} />
-            Добавить
+            {t("common.add")}
           </button>
         </div>
       </div>
@@ -550,10 +542,10 @@ const emptyFilters = {
           onSubmit={handleTransferSubmit}
           className="p-6 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm dark:shadow-none space-y-4 animate-slide-down"
         >
-          <h4 className="font-medium">Перевод между счетами</h4>
+          <h4 className="font-medium">{t("transactions.transferFormTitle")}</h4>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Со счёта</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("transactions.fromAccount")}</label>
               <select
                 value={transferForm.from_account_id}
                 onChange={(e) => setTransferForm((f) => ({ ...f, from_account_id: +e.target.value }))}
@@ -568,7 +560,7 @@ const emptyFilters = {
               </select>
             </div>
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">На счёт</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("transactions.toAccount")}</label>
               <select
                 value={transferForm.to_account_id}
                 onChange={(e) => setTransferForm((f) => ({ ...f, to_account_id: +e.target.value }))}
@@ -583,7 +575,7 @@ const emptyFilters = {
               </select>
             </div>
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Сумма</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("transactions.amount")}</label>
               <input
                 type="number"
                 step="0.01"
@@ -595,7 +587,7 @@ const emptyFilters = {
               />
             </div>
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Дата</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("transactions.date")}</label>
               <input
                 type="date"
                 value={transferForm.date}
@@ -605,13 +597,13 @@ const emptyFilters = {
             </div>
           </div>
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">Заметка</label>
+            <label className="block text-sm text-zinc-400 mb-1">{t("transactions.note")}</label>
             <input
               type="text"
               value={transferForm.note}
               onChange={(e) => setTransferForm((f) => ({ ...f, note: e.target.value }))}
               className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder-zinc-500 form-transition focus:ring-2 focus:ring-emerald-500"
-              placeholder="Описание перевода"
+              placeholder={t("transactions.transferDescription")}
             />
           </div>
           <div className="flex gap-2">
@@ -619,14 +611,14 @@ const emptyFilters = {
               type="submit"
               className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
             >
-              Выполнить перевод
+              {t("transfers.execute")}
             </button>
             <button
               type="button"
               onClick={() => setShowTransferForm(false)}
               className="px-4 py-2 rounded-lg bg-zinc-600 text-white hover:bg-zinc-500 btn-transition"
             >
-              Отмена
+              {t("common.cancel")}
             </button>
           </div>
         </form>
@@ -642,10 +634,10 @@ const emptyFilters = {
         >
           <div className="flex items-center gap-2">
             <Filter size={16} />
-            <span>Фильтры</span>
+            <span>{t("transactions.filters")}</span>
             {hasActiveFilters && (
               <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs">
-                активны
+                {t("transactions.filtersActive")}
               </span>
             )}
           </div>
@@ -666,7 +658,7 @@ const emptyFilters = {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-sm btn-transition"
               >
                 <Calendar size={14} />
-                Этот месяц
+                {t("transactions.thisMonth")}
               </button>
               <button
                 type="button"
@@ -674,7 +666,7 @@ const emptyFilters = {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-sm btn-transition"
               >
                 <Calendar size={14} />
-                Эта неделя
+                {t("transactions.thisWeek")}
               </button>
               <button
                 type="button"
@@ -686,7 +678,7 @@ const emptyFilters = {
                 }`}
               >
                 <Lightbulb size={14} />
-                Без категории
+                {t("transactions.uncategorized")}
               </button>
               {filters.uncategorized_only && transactions.some((tx) => !tx.category_id && (tx.note?.trim()?.length ?? 0) >= 2) && (
                 <button
@@ -695,14 +687,14 @@ const emptyFilters = {
                   disabled={autoAssigning}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/30 disabled:opacity-50 btn-transition"
                 >
-                  {autoAssigning ? "Назначение…" : "Автоматически по подсказке"}
+                  {autoAssigning ? t("transactions.assigning") : t("transactions.autoAssign")}
                 </button>
               )}
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Дата от</label>
+                <label className="block text-xs text-zinc-400 mb-1">{t("transactions.dateFrom")}</label>
                 <input
                   type="date"
                   value={filters.date_from}
@@ -711,7 +703,7 @@ const emptyFilters = {
                 />
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Дата до</label>
+                <label className="block text-xs text-zinc-400 mb-1">{t("transactions.dateTo")}</label>
                 <input
                   type="date"
                   value={filters.date_to}
@@ -720,7 +712,7 @@ const emptyFilters = {
                 />
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Счёт</label>
+                <label className="block text-xs text-zinc-400 mb-1">{t("transactions.accountFilter")}</label>
                 <select
                   value={filters.account_id ?? ""}
                   onChange={(e) =>
@@ -731,7 +723,7 @@ const emptyFilters = {
                   }
                   className="w-full px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white text-sm form-transition"
                 >
-                  <option value="">Все</option>
+                  <option value="">{t("common.all")}</option>
                   {accounts.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name}
@@ -740,7 +732,7 @@ const emptyFilters = {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Категория</label>
+                <label className="block text-xs text-zinc-400 mb-1">{t("settings.category")}</label>
                 <select
                   value={filters.uncategorized_only ? "uncategorized" : (filters.category_id ?? "")}
                   onChange={(e) => {
@@ -753,8 +745,8 @@ const emptyFilters = {
                   }}
                   className="w-full px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white text-sm form-transition"
                 >
-                  <option value="">Все</option>
-                  <option value="uncategorized">Без категории</option>
+                  <option value="">{t("common.all")}</option>
+                  <option value="uncategorized">{t("transactions.uncategorized")}</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -763,7 +755,7 @@ const emptyFilters = {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Тип</label>
+                <label className="block text-xs text-zinc-400 mb-1">{t("transactions.typeFilter")}</label>
                 <select
                   value={filters.transaction_type}
                   onChange={(e) =>
@@ -774,20 +766,20 @@ const emptyFilters = {
                   }
                   className="w-full px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white text-sm form-transition"
                 >
-                  <option value="">Все</option>
-                  <option value="income">Доход</option>
-                  <option value="expense">Расход</option>
+                  <option value="">{t("common.all")}</option>
+                  <option value="income">{t("transactions.income")}</option>
+                  <option value="expense">{t("transactions.expense")}</option>
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Поиск по заметке</label>
+                <label className="block text-xs text-zinc-400 mb-1">{t("transactions.searchNote")}</label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
                   <input
                     type="text"
                     value={filters.search_note}
                     onChange={(e) => setFilters((f) => ({ ...f, search_note: e.target.value }))}
-                    placeholder="Текст в заметке"
+                    placeholder={t("transactions.placeholderNote")}
                     className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white text-sm placeholder-zinc-500 form-transition"
                   />
                 </div>
@@ -799,14 +791,14 @@ const emptyFilters = {
                 onClick={applyFilters}
                 className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition text-sm"
               >
-                Применить
+                {t("transactions.applyFilters")}
               </button>
               <button
                 type="button"
                 onClick={handleResetFilters}
                 className="px-4 py-2 rounded-lg bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-600 btn-transition text-sm"
               >
-                Сбросить
+                {t("transactions.resetFilters")}
               </button>
             </div>
           </div>
@@ -821,11 +813,11 @@ const emptyFilters = {
           className="p-6 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm dark:shadow-none space-y-4 animate-slide-down"
         >
           <h4 className="font-medium">
-            {editingId ? "Редактировать транзакцию" : "Новая транзакция"}
+            {editingId ? t("transactions.edit") : t("transactions.new")}
           </h4>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Тип</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("transactions.typeFilter")}</label>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -836,7 +828,7 @@ const emptyFilters = {
                       : "bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400"
                   }`}
                 >
-                  Расход
+                  {t("transactions.expense")}
                 </button>
                 <button
                   type="button"
@@ -847,12 +839,12 @@ const emptyFilters = {
                       : "bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400"
                   }`}
                 >
-                  Доход
+                  {t("transactions.income")}
                 </button>
               </div>
             </div>
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Счёт</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("transactions.accountFilter")}</label>
               <select
                 value={form.account_id}
                 onChange={(e) => setForm((f) => ({ ...f, account_id: +e.target.value }))}
@@ -867,7 +859,7 @@ const emptyFilters = {
               </select>
             </div>
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Категория</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("settings.category")}</label>
               <select
                 value={form.category_id ?? ""}
                 onChange={(e) =>
@@ -878,7 +870,7 @@ const emptyFilters = {
                 }
                 className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white form-transition focus:ring-2 focus:ring-emerald-500"
               >
-                <option value="">Без категории</option>
+                <option value="">{t("transactions.uncategorized")}</option>
                 {formCategories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -887,7 +879,7 @@ const emptyFilters = {
               </select>
             </div>
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Сумма</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("transactions.amount")}</label>
               <input
                 ref={amountInputRef}
                 type="number"
@@ -901,7 +893,7 @@ const emptyFilters = {
               />
             </div>
             <div>
-              <label className="block text-sm text-zinc-400 mb-1">Дата</label>
+              <label className="block text-sm text-zinc-400 mb-1">{t("transactions.date")}</label>
               <input
                 type="date"
                 value={form.date}
@@ -911,13 +903,13 @@ const emptyFilters = {
             </div>
           </div>
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">Заметка</label>
+            <label className="block text-sm text-zinc-400 mb-1">{t("transactions.note")}</label>
             <input
               type="text"
               value={form.note}
               onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
               className="w-full px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white placeholder-zinc-500 form-transition focus:ring-2 focus:ring-emerald-500"
-              placeholder="Описание (напр. 'Glovo пицца')"
+              placeholder={t("transactions.placeholderDescription")}
             />
             
             {/* ML Category Suggestion */}
@@ -927,7 +919,7 @@ const emptyFilters = {
                   <div className="flex items-center gap-2 text-sm">
                     <Lightbulb size={16} className="text-amber-500" />
                     <span className="text-zinc-600 dark:text-zinc-300">
-                      Предлагаем: <strong className="text-zinc-900 dark:text-white">{suggestedCategory.category_name}</strong>
+                      {t("transactions.suggestLabel", { name: suggestedCategory.category_name })}
                     </span>
                     <span className="text-xs text-zinc-400">
                       ({Math.round(suggestedCategory.confidence * 100)}%)
@@ -939,10 +931,10 @@ const emptyFilters = {
                       onClick={() => {
                         setForm((f) => ({ ...f, category_id: suggestedCategory.category_id }));
                         setSuggestedCategory(null);
-                        showToast("Категория применена", "success");
+                        showToast(t("transactions.applyCategory"), "success");
                       }}
                       className="p-1.5 rounded bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 btn-transition"
-                      title="Принять"
+                      title={t("transactions.accept")}
                     >
                       <Check size={14} />
                     </button>
@@ -950,7 +942,7 @@ const emptyFilters = {
                       type="button"
                       onClick={() => setSuggestedCategory(null)}
                       className="p-1.5 rounded bg-zinc-500/10 text-zinc-500 hover:bg-zinc-500/20 btn-transition"
-                      title="Игнорировать"
+                      title={t("transactions.ignore")}
                     >
                       <X size={14} />
                     </button>
@@ -964,7 +956,7 @@ const emptyFilters = {
               type="submit"
               className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
             >
-              {editingId ? "Сохранить" : "Добавить"}
+              {editingId ? t("common.save") : t("common.add")}
             </button>
             <button
               type="button"
@@ -974,7 +966,7 @@ const emptyFilters = {
               }}
               className="px-4 py-2 rounded-lg bg-zinc-600 text-white hover:bg-zinc-500 btn-transition"
             >
-              Отмена
+              {t("common.cancel")}
             </button>
           </div>
         </form>
@@ -985,11 +977,11 @@ const emptyFilters = {
         <table className="w-full">
           <thead>
             <tr className="bg-zinc-100 dark:bg-zinc-800 text-left text-sm text-zinc-500 dark:text-zinc-400">
-              <th className="px-4 py-3">Дата</th>
-              <th className="px-4 py-3">Счёт</th>
-              <th className="px-4 py-3">Категория</th>
-              <th className="px-4 py-3">Сумма</th>
-              <th className="px-4 py-3 hidden sm:table-cell">Заметка</th>
+              <th className="px-4 py-3">{t("transactions.date")}</th>
+              <th className="px-4 py-3">{t("transactions.accountFilter")}</th>
+              <th className="px-4 py-3">{t("settings.category")}</th>
+              <th className="px-4 py-3">{t("transactions.amount")}</th>
+              <th className="px-4 py-3 hidden sm:table-cell">{t("transactions.note")}</th>
               <th className="px-4 py-3 w-20"></th>
             </tr>
           </thead>
@@ -1013,7 +1005,7 @@ const emptyFilters = {
                   deletingId === tx.id ? "row-deleting" : ""
                 }`}
               >
-                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">{formatDate(tx.date)}</td>
+                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">{formatDateDisplay(tx.date)}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <CreditCard size={14} className="text-zinc-400" />
@@ -1039,7 +1031,7 @@ const emptyFilters = {
                       disabled={assigningCategoryId === tx.id}
                       className="min-w-[120px] px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
                     >
-                      <option value="">Выберите категорию</option>
+                      <option value="">{t("transactions.selectCategoryPlaceholder")}</option>
                       {(tx.transaction_type === "income" ? incomeCategories : expenseCategories).map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}
@@ -1089,7 +1081,7 @@ const emptyFilters = {
             disabled={loadingMore}
             className="px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-700 btn-transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loadingMore ? "Загрузка…" : "Показать ещё"}
+            {loadingMore ? t("common.loading") : t("transactions.loadMore")}
           </button>
         </div>
       )}
@@ -1097,8 +1089,8 @@ const emptyFilters = {
       {!loading && transactions.length === 0 && !showForm && (
         <EmptyState
           icon={CreditCard}
-          title="Нет транзакций"
-          description="Начните отслеживать свои финансы. Добавьте первую транзакцию, чтобы увидеть, куда уходят ваши деньги."
+          title={t("transactions.emptyTitle")}
+          description={t("transactions.emptyDesc")}
           action={
             <button
               type="button"
@@ -1117,7 +1109,7 @@ const emptyFilters = {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 btn-transition"
             >
               <Plus size={18} />
-              Добавить транзакцию
+              {t("quickStats.addFirst")}
             </button>
           }
         />
@@ -1125,9 +1117,9 @@ const emptyFilters = {
 
       <ConfirmDialog
         open={deleteConfirmId !== null}
-        title="Удалить транзакцию?"
-        message="Эта операция необратима."
-        confirmLabel="Удалить"
+        title={t("transactions.deleteConfirmTitle")}
+        message={t("transactions.deleteConfirmMessage")}
+        confirmLabel={t("common.delete")}
         variant="danger"
         onConfirm={handleDeleteConfirm}
         onCancel={() => setDeleteConfirmId(null)}

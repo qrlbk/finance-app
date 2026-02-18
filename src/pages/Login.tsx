@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { api, type UserSession } from "../lib/api";
 
 function getErrorMessage(err: unknown, fallback: string): string {
@@ -12,6 +13,7 @@ function getErrorMessage(err: unknown, fallback: string): string {
 }
 
 export function Login() {
+  const { t } = useTranslation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [users, setUsers] = useState<UserSession[]>([]);
@@ -27,7 +29,7 @@ export function Login() {
     e.preventDefault();
     setError("");
     if (!username.trim() || !password) {
-      setError("Введите имя пользователя и пароль");
+      setError(t("login.errorRequired"));
       return;
     }
     setLoading(true);
@@ -35,7 +37,7 @@ export function Login() {
       await api.login(username.trim(), password);
       navigate("/", { replace: true });
     } catch (err) {
-      setError(getErrorMessage(err, "Ошибка входа"));
+      setError(getErrorMessage(err, t("login.errorFailed")));
     } finally {
       setLoading(false);
     }
@@ -45,7 +47,7 @@ export function Login() {
     <div className="min-h-screen flex items-center justify-center bg-zinc-100 dark:bg-zinc-950 p-4">
       <div className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xl p-8">
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100 text-center mb-6">
-          Вход
+          {t("login.title")}
         </h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
@@ -55,7 +57,7 @@ export function Login() {
           )}
           <div>
             <label htmlFor="login-username" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Имя пользователя
+              {t("login.username")}
             </label>
             <input
               id="login-username"
@@ -64,12 +66,12 @@ export function Login() {
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"
               className="w-full px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-              placeholder="default"
+              placeholder={t("login.placeholderUsername")}
             />
           </div>
           <div>
             <label htmlFor="login-password" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Пароль
+              {t("login.password")}
             </label>
             <input
               id="login-password"
@@ -85,18 +87,18 @@ export function Login() {
             disabled={loading}
             className="w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-medium transition-colors"
           >
-            {loading ? "Вход…" : "Войти"}
+            {loading ? t("login.submitting") : t("login.submit")}
           </button>
         </form>
         <p className="mt-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
-          Нет аккаунта?{" "}
+          {t("login.noAccount")}{" "}
           <Link to="/register" className="text-emerald-600 dark:text-emerald-400 hover:underline">
-            Регистрация
+            {t("login.registerLink")}
           </Link>
         </p>
         {users.length > 0 && (
           <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500 text-center">
-            Пользователи: {users.map((u) => u.display_name || u.username).join(", ")}
+            {t("login.usersList", { list: users.map((u) => u.display_name || u.username).join(", ") })}
           </p>
         )}
       </div>

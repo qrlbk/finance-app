@@ -1,17 +1,11 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from "recharts";
 import { TrendingUp, TrendingDown, PieChart as PieIcon, BarChart3, Wallet, Table2, Sparkles } from "lucide-react";
 import { api, type ForecastDetails } from "../lib/api";
+import { formatCurrency } from "../lib/format";
 
 const COLORS = ["#22c55e", "#3b82f6", "#f97316", "#eab308", "#ec4899", "#8b5cf6", "#06b6d4", "#64748b"];
-
-function formatAmount(amount: number) {
-  return new Intl.NumberFormat("ru-KZ", {
-    style: "decimal",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount) + " ₸";
-}
 
 // Custom tooltip component
 function CustomTooltip({ active, payload, label }: any) {
@@ -26,7 +20,7 @@ function CustomTooltip({ active, payload, label }: any) {
               style={{ backgroundColor: entry.color }}
             />
             <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-              {entry.name}: {formatAmount(entry.value)}
+              {entry.name}: {formatCurrency(entry.value)} ₸
             </span>
           </div>
         ))}
@@ -60,6 +54,7 @@ function renderCustomLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent
 }
 
 export function Reports() {
+  const { t } = useTranslation();
   const [categoryData, setCategoryData] = useState<{ category_name: string; total: number }[]>([]);
   const [monthlyData, setMonthlyData] = useState<{ month: string; income: number; expense: number }[]>([]);
   const [summary, setSummary] = useState<{ total_balance: number; income_month: number; expense_month: number; base_currency?: string } | null>(null);
@@ -131,13 +126,13 @@ export function Reports() {
               <Wallet size={22} className="text-emerald-500" />
             </div>
             <div>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">Общий баланс</p>
-              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{formatAmount(summary.total_balance)}</p>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("reports.totalBalance")}</p>
+              <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(summary.total_balance)}</p>
             </div>
             <div className="ml-auto text-right text-sm">
-              <p className="text-zinc-500 dark:text-zinc-400">Накопления за месяц</p>
+              <p className="text-zinc-500 dark:text-zinc-400">{t("reports.savingsMonth")}</p>
               <p className={`font-semibold ${summary.income_month - summary.expense_month >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-                {formatAmount(summary.income_month - summary.expense_month)}
+                {formatCurrency(summary.income_month - summary.expense_month)}
               </p>
             </div>
           </div>
@@ -147,7 +142,7 @@ export function Reports() {
       {/* Period selector */}
       <div className="flex flex-wrap gap-4 items-end">
         <div>
-          <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1">Год (для круговой диаграммы)</label>
+          <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1">{t("reports.yearLabel")}</label>
           <select
             value={year}
             onChange={(e) => setYear(+e.target.value)}
@@ -161,31 +156,28 @@ export function Reports() {
           </select>
         </div>
         <div>
-          <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1">Месяц</label>
+          <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1">{t("reports.month")}</label>
           <select
             value={month}
             onChange={(e) => setMonth(+e.target.value)}
             className="px-4 py-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white form-transition focus:ring-2 focus:ring-emerald-500"
           >
-            {[
-              "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-              "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
-            ].map((name, i) => (
+            {(t("reports.months") as string).split(", ").map((name, i) => (
               <option key={i} value={i + 1}>
-                {name}
+                {name.trim()}
               </option>
             ))}
           </select>
         </div>
         <div>
-          <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1">Период графика (мес.)</label>
+          <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1">{t("reports.periodMonths")}</label>
           <select
             value={monthsCount}
             onChange={(e) => setMonthsCount(+e.target.value)}
             className="px-4 py-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white form-transition focus:ring-2 focus:ring-emerald-500"
           >
-            <option value={6}>6 месяцев</option>
-            <option value={12}>12 месяцев</option>
+            <option value={6}>{t("reports.months6")}</option>
+            <option value={12}>{t("reports.months12")}</option>
           </select>
         </div>
         <div className="flex items-end">
@@ -196,7 +188,7 @@ export function Reports() {
               onChange={(e) => setIncludeSubcategories(e.target.checked)}
               className="rounded border-zinc-300 dark:border-zinc-600 text-emerald-500 focus:ring-emerald-500"
             />
-            Включая подкатегории
+            {t("reports.includeSubcategories")}
           </label>
         </div>
       </div>
@@ -211,8 +203,8 @@ export function Reports() {
                   <TrendingUp size={20} className="text-emerald-500" />
                 </div>
                 <div>
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">Доход за месяц</p>
-                  <p className="text-xl font-bold text-emerald-500">{formatAmount(currentMonthData.income)}</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("reports.incomeMonth")}</p>
+                  <p className="text-xl font-bold text-emerald-500">{formatCurrency(currentMonthData.income)}</p>
                 </div>
               </div>
               {incomeChange && (
@@ -229,8 +221,8 @@ export function Reports() {
                   <TrendingDown size={20} className="text-red-500" />
                 </div>
                 <div>
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">Расход за месяц</p>
-                  <p className="text-xl font-bold text-red-500">{formatAmount(currentMonthData.expense)}</p>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("reports.expenseMonth")}</p>
+                  <p className="text-xl font-bold text-red-500">{formatCurrency(currentMonthData.expense)}</p>
                 </div>
               </div>
               {expenseChange && (
@@ -248,7 +240,7 @@ export function Reports() {
         <div className="p-6 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm dark:shadow-none animate-slide-up">
           <div className="flex items-center gap-2 mb-4">
             <PieIcon size={18} className="text-zinc-400" />
-            <h4 className="font-medium text-zinc-900 dark:text-zinc-100">Расходы по категориям</h4>
+            <h4 className="font-medium text-zinc-900 dark:text-zinc-100">{t("reports.expensesByCategory")}</h4>
           </div>
           {loading ? (
             <div className="h-64 flex items-center justify-center">
@@ -298,7 +290,7 @@ export function Reports() {
           ) : (
             <div className="h-64 flex flex-col items-center justify-center text-zinc-500">
               <PieIcon size={40} className="text-zinc-300 dark:text-zinc-700 mb-3" />
-              <p>Нет данных за выбранный период</p>
+              <p>{t("reports.noDataForPeriod")}</p>
             </div>
           )}
         </div>
@@ -307,7 +299,7 @@ export function Reports() {
         <div className="p-6 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm dark:shadow-none animate-slide-up" style={{ animationDelay: "0.1s" }}>
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 size={18} className="text-zinc-400" />
-            <h4 className="font-medium text-zinc-900 dark:text-zinc-100">Доходы и расходы по месяцам</h4>
+            <h4 className="font-medium text-zinc-900 dark:text-zinc-100">{t("reports.incomeExpenseByMonth")}</h4>
           </div>
           {loading ? (
             <div className="h-64 flex items-center justify-center">
@@ -342,7 +334,7 @@ export function Reports() {
                 <Bar 
                   dataKey="income" 
                   fill="#22c55e" 
-                  name="Доход" 
+                  name={t("reports.income")} 
                   radius={[4, 4, 0, 0]}
                   animationBegin={0}
                   animationDuration={800}
@@ -350,7 +342,7 @@ export function Reports() {
                 <Bar 
                   dataKey="expense" 
                   fill="#ef4444" 
-                  name="Расход" 
+                  name={t("reports.expense")} 
                   radius={[4, 4, 0, 0]}
                   animationBegin={200}
                   animationDuration={800}
@@ -360,7 +352,7 @@ export function Reports() {
           ) : (
             <div className="h-64 flex flex-col items-center justify-center text-zinc-500">
               <BarChart3 size={40} className="text-zinc-300 dark:text-zinc-700 mb-3" />
-              <p>Нет данных</p>
+              <p>{t("reports.noData")}</p>
             </div>
           )}
         </div>
@@ -370,7 +362,7 @@ export function Reports() {
       <div className="p-6 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm dark:shadow-none animate-slide-up" style={{ animationDelay: "0.15s" }}>
         <div className="flex items-center gap-2 mb-4">
           <Table2 size={18} className="text-zinc-400" />
-          <h4 className="font-medium text-zinc-900 dark:text-zinc-100">Расходы по категориям — таблица</h4>
+          <h4 className="font-medium text-zinc-900 dark:text-zinc-100">{t("reports.expensesByCategoryTable")}</h4>
         </div>
         {loading ? (
           <div className="h-32 flex items-center justify-center">
@@ -381,16 +373,16 @@ export function Reports() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-zinc-200 dark:border-zinc-700 text-left text-zinc-500 dark:text-zinc-400">
-                  <th className="pb-3 pr-4 font-medium">Категория</th>
-                  <th className="pb-3 pr-4 font-medium text-right">Сумма</th>
-                  <th className="pb-3 font-medium text-right">% от общих расходов</th>
+                  <th className="pb-3 pr-4 font-medium">{t("reports.category")}</th>
+                  <th className="pb-3 pr-4 font-medium text-right">{t("reports.amount")}</th>
+                  <th className="pb-3 font-medium text-right">{t("reports.percentOfTotal")}</th>
                 </tr>
               </thead>
               <tbody>
                 {categoryData.map((row, i) => (
                   <tr key={i} className="border-b border-zinc-100 dark:border-zinc-800 last:border-0">
                     <td className="py-2.5 pr-4 text-zinc-900 dark:text-zinc-100">{row.category_name}</td>
-                    <td className="py-2.5 pr-4 text-right font-medium text-red-500">{formatAmount(row.total)}</td>
+                    <td className="py-2.5 pr-4 text-right font-medium text-red-500">{formatCurrency(row.total)}</td>
                     <td className="py-2.5 text-right text-zinc-600 dark:text-zinc-400">
                       {totalExpense > 0 ? ((row.total / totalExpense) * 100).toFixed(1) : 0}%
                     </td>
@@ -399,15 +391,15 @@ export function Reports() {
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-zinc-200 dark:border-zinc-700 font-semibold text-zinc-900 dark:text-zinc-100">
-                  <td className="pt-3 pr-4">Итого</td>
-                  <td className="pt-3 pr-4 text-right text-red-500">{formatAmount(totalExpense)}</td>
+                  <td className="pt-3 pr-4">{t("reports.total")}</td>
+                  <td className="pt-3 pr-4 text-right text-red-500">{formatCurrency(totalExpense)}</td>
                   <td className="pt-3 text-right">100%</td>
                 </tr>
               </tfoot>
             </table>
           </div>
         ) : (
-          <p className="text-zinc-500 dark:text-zinc-400 text-center py-6">Нет данных за выбранный период</p>
+          <p className="text-zinc-500 dark:text-zinc-400 text-center py-6">{t("reports.noDataForPeriod")}</p>
         )}
       </div>
 
@@ -416,40 +408,40 @@ export function Reports() {
         <div className="p-6 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-sm dark:shadow-none animate-slide-up" style={{ animationDelay: "0.2s" }}>
           <div className="flex items-center gap-2 mb-4">
             <Sparkles size={18} className="text-amber-500" />
-            <h4 className="font-medium text-zinc-900 dark:text-zinc-100">Прогноз расходов на следующий месяц</h4>
+            <h4 className="font-medium text-zinc-900 dark:text-zinc-100">{t("reports.forecastNextMonth")}</h4>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
-              <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Ожидаемые расходы</p>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">{t("reports.expectedExpenses")}</p>
               <p className="text-xl font-bold text-amber-600 dark:text-amber-400">
-                {formatAmount(forecast.overall.predicted_expense)}
+                {formatCurrency(forecast.overall.predicted_expense)}
               </p>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                диапазон: {formatAmount(forecast.overall.confidence_low)} — {formatAmount(forecast.overall.confidence_high)}
+                {t("reports.range")}: {formatCurrency(forecast.overall.confidence_low)} — {formatCurrency(forecast.overall.confidence_high)}
               </p>
               <p className="text-xs mt-1">
-                Тренд:{" "}
+                {t("reports.trendLabel")}:{" "}
                 <span className={forecast.overall.trend === "up" ? "text-red-500" : forecast.overall.trend === "down" ? "text-emerald-500" : "text-zinc-500"}>
-                  {forecast.overall.trend === "up" ? "↑ рост" : forecast.overall.trend === "down" ? "↓ снижение" : "→ стабильно"} ({forecast.overall.trend_percent > 0 ? "+" : ""}{forecast.overall.trend_percent.toFixed(0)}%)
+                  {forecast.overall.trend === "up" ? t("reports.trendUp") : forecast.overall.trend === "down" ? t("reports.trendDown") : t("reports.trendStable")} ({forecast.overall.trend_percent > 0 ? "+" : ""}{forecast.overall.trend_percent.toFixed(0)}%)
                 </span>
               </p>
             </div>
             {forecast.by_category.length > 0 && (
               <div className="sm:col-span-2">
-                <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-2">По категориям</p>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-2">{t("reports.byCategory")}</p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-zinc-200 dark:border-zinc-700 text-left text-zinc-500 dark:text-zinc-400">
-                        <th className="pb-2 pr-4 font-medium">Категория</th>
-                        <th className="pb-2 font-medium text-right">Прогноз</th>
+                        <th className="pb-2 pr-4 font-medium">{t("reports.category")}</th>
+                        <th className="pb-2 font-medium text-right">{t("reports.forecast")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {forecast.by_category.map((c) => (
                         <tr key={c.category_id} className="border-b border-zinc-100 dark:border-zinc-800">
                           <td className="py-1.5 pr-4 text-zinc-900 dark:text-zinc-100">{c.category_name}</td>
-                          <td className="py-1.5 text-right font-medium text-amber-600 dark:text-amber-400">{formatAmount(c.predicted_expense)}</td>
+                          <td className="py-1.5 text-right font-medium text-amber-600 dark:text-amber-400">{formatCurrency(c.predicted_expense)}</td>
                         </tr>
                       ))}
                     </tbody>
