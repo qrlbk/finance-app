@@ -17,6 +17,7 @@ const pathToTitleKey: Record<string, string> = {
   "/insights": "nav.insights",
   "/reports": "nav.reports",
   "/chat": "nav.chat",
+  "/docs": "docs.title",
   "/settings": "nav.settings",
 };
 

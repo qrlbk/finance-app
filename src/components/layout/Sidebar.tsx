@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { LayoutDashboard, ArrowLeftRight, Wallet, BarChart3, Settings, TrendingUp, Repeat, Tag, Lightbulb, FileUp, ArrowRightLeft, MessageCircle, LogOut } from "lucide-react";
+import { LayoutDashboard, ArrowLeftRight, Wallet, BarChart3, Settings, TrendingUp, Repeat, Tag, Lightbulb, FileUp, ArrowRightLeft, MessageCircle, LogOut, BookOpen } from "lucide-react";
 import { api } from "../../lib/api";
 import { formatCurrency } from "../../lib/format";
 
@@ -15,6 +15,7 @@ const navConfig: { to: string; icon: typeof LayoutDashboard; labelKey: string }[
   { to: "/insights", icon: Lightbulb, labelKey: "nav.insights" },
   { to: "/reports", icon: BarChart3, labelKey: "nav.reports" },
   { to: "/chat", icon: MessageCircle, labelKey: "nav.chat" },
+  { to: "/docs", icon: BookOpen, labelKey: "nav.docs" },
   { to: "/settings", icon: Settings, labelKey: "nav.settings" },
 ];
 

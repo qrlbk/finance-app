@@ -11,6 +11,7 @@ import { InsightsPage } from "./pages/Insights";
 import { Import } from "./pages/Import";
 import { Transfers } from "./pages/Transfers";
 import { Chat } from "./pages/Chat";
+import { Docs } from "./pages/Docs";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
 import { ToastProvider } from "./components/ui/Toast";
@@ -44,6 +45,7 @@ function App() {
               <Route path="import" element={<Import />} />
               <Route path="reports" element={<Reports />} />
               <Route path="chat" element={<ErrorBoundary><Chat /></ErrorBoundary>} />
+              <Route path="docs" element={<Docs />} />
               <Route path="settings" element={<Settings />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
