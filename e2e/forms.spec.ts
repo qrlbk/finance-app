@@ -26,7 +26,7 @@ test.describe('Form Interactions', () => {
             case 'get_categories':
               return mockData.categories;
             case 'get_summary':
-              return { total_balance: 600000, income_month: 500000, expense_month: 200000 };
+              return { total_balance: 600000, income_month: 500000, expense_month: 200000, currencies: ['KZT'], base_currency: 'KZT' };
             case 'get_transactions':
               return mockData.transactions;
             case 'get_monthly_totals':

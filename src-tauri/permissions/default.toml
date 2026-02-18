@@ -28,6 +28,10 @@ commands.allow = [
   "get_transfers",
   # Summary and reports
   "get_summary",
+  "get_base_currency",
+  "set_base_currency",
+  "get_exchange_rates",
+  "add_exchange_rate",
   "get_expense_by_category",
   "get_monthly_totals",
   # Backup/Export

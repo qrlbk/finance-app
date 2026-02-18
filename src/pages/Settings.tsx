@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { Brain, RefreshCw, CheckCircle, XCircle, PiggyBank, Plus, Trash2, FileDown, FileUp, FileJson, FileSpreadsheet, ExternalLink, FileText } from "lucide-react";
+import { Brain, RefreshCw, CheckCircle, XCircle, PiggyBank, Plus, Trash2, FileDown, FileUp, FileJson, FileSpreadsheet, ExternalLink, FileText, DollarSign } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getTheme, setTheme, initTheme, type Theme } from "../stores/themeStore";
-import { api, type ModelStatus, type Budget, type Category, type ImportResult, type Account, type EmbeddedLlmStatus } from "../lib/api";
+import { api, type ModelStatus, type Budget, type Category, type ImportResult, type Account, type EmbeddedLlmStatus, type ExchangeRateRow } from "../lib/api";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { useToast } from "../components/ui/Toast";
 import { SettingsTheme } from "./settings/SettingsTheme";
@@ -79,6 +79,13 @@ export function Settings() {
   const [showTrainPromptAfterImport, setShowTrainPromptAfterImport] = useState(false);
   const [trainingAfterImport, setTrainingAfterImport] = useState(false);
 
+  // Base currency and exchange rates
+  const COMMON_CURRENCIES = ["KZT", "USD", "EUR", "RUB"];
+  const [baseCurrency, setBaseCurrencyState] = useState<string>("KZT");
+  const [exchangeRates, setExchangeRates] = useState<ExchangeRateRow[]>([]);
+  const [rateForm, setRateForm] = useState({ from_currency: "USD", to_currency: "KZT", rate: "", date: new Date().toISOString().slice(0, 10) });
+  const [addingRate, setAddingRate] = useState(false);
+
   const loadEmbeddedLlmStatus = async () => {
     try {
       const s = await api.getEmbeddedLlmStatus();
@@ -128,6 +135,7 @@ export function Settings() {
     initTheme();
     loadModelStatus();
     loadBudgets();
+    loadCurrencySettings();
     loadEmbeddedLlmStatus();
   }, []);
 
@@ -153,6 +161,16 @@ export function Settings() {
       }
     } catch (e) {
       console.error("Failed to load budgets:", e);
+    }
+  };
+
+  const loadCurrencySettings = async () => {
+    try {
+      const [base, rates] = await Promise.all([api.getBaseCurrency(), api.getExchangeRates()]);
+      setBaseCurrencyState(base);
+      setExchangeRates(rates);
+    } catch (e) {
+      console.error("Failed to load currency settings:", e);
     }
   };
 
@@ -399,6 +417,134 @@ export function Settings() {
         onResetClick={() => setResetDbConfirm(true)}
         openContainingFolder={openContainingFolder}
       />
+
+      {/* Base currency and exchange rates */}
+      <div>
+        <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
+          <DollarSign size={20} className="text-emerald-500" />
+          Валюта и курсы
+        </h3>
+        <p className="text-sm text-zinc-400 mb-4">
+          Базовая валюта используется для общего баланса и отчётов. Добавьте курсы для конвертации (например, 1 USD = 450 KZT).
+        </p>
+        <div className="p-4 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 space-y-4 mb-4">
+          <div>
+            <label className="block text-xs text-zinc-400 mb-1">Базовая валюта</label>
+            <select
+              value={baseCurrency}
+              onChange={async (e) => {
+                const v = e.target.value;
+                try {
+                  await api.setBaseCurrency(v);
+                  setBaseCurrencyState(v);
+                  showToast("Базовая валюта сохранена", "success");
+                } catch (e) {
+                  showToast(getErrorMessage(e), "error");
+                }
+              }}
+              className="px-3 py-2 rounded-lg bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white text-sm"
+            >
+              {COMMON_CURRENCIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <span className="block text-xs text-zinc-400 mb-2">Курсы валют (последние по дате)</span>
+            {exchangeRates.length === 0 ? (
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">Нет добавленных курсов. Добавьте курс ниже.</p>
+            ) : (
+              <ul className="text-sm space-y-1 max-h-32 overflow-auto">
+                {exchangeRates.map((r, i) => (
+                  <li key={i} className="text-zinc-700 dark:text-zinc-300">
+                    1 {r.from_currency} = {Number(r.rate).toFixed(4)} {r.to_currency} ({r.date})
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const rate = parseFloat(rateForm.rate);
+              if (rateForm.from_currency === rateForm.to_currency || !Number.isFinite(rate) || rate <= 0) {
+                showToast("Укажите разные валюты и положительный курс", "error");
+                return;
+              }
+              try {
+                setAddingRate(true);
+                await api.addExchangeRate({
+                  from_currency: rateForm.from_currency,
+                  to_currency: rateForm.to_currency,
+                  rate,
+                  date: rateForm.date,
+                });
+                showToast("Курс добавлен", "success");
+                setRateForm(prev => ({ ...prev, rate: "" }));
+                loadCurrencySettings();
+              } catch (err) {
+                showToast(getErrorMessage(err), "error");
+              } finally {
+                setAddingRate(false);
+              }
+            }}
+            className="flex flex-wrap items-end gap-3"
+          >
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">Из</label>
+              <select
+                value={rateForm.from_currency}
+                onChange={(e) => setRateForm(f => ({ ...f, from_currency: e.target.value }))}
+                className="px-3 py-1.5 rounded-lg bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-sm"
+              >
+                {COMMON_CURRENCIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">В</label>
+              <select
+                value={rateForm.to_currency}
+                onChange={(e) => setRateForm(f => ({ ...f, to_currency: e.target.value }))}
+                className="px-3 py-1.5 rounded-lg bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-sm"
+              >
+                {COMMON_CURRENCIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">Курс (1 из = N в)</label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={rateForm.rate}
+                onChange={(e) => setRateForm(f => ({ ...f, rate: e.target.value }))}
+                placeholder="450"
+                className="w-24 px-3 py-1.5 rounded-lg bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">Дата</label>
+              <input
+                type="date"
+                value={rateForm.date}
+                onChange={(e) => setRateForm(f => ({ ...f, date: e.target.value }))}
+                className="px-3 py-1.5 rounded-lg bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 text-sm"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={addingRate}
+              className="px-4 py-2 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 text-sm"
+            >
+              {addingRate ? "Добавление…" : "Добавить курс"}
+            </button>
+          </form>
+        </div>
+      </div>
 
       {/* Export/Import Section */}
       <div>

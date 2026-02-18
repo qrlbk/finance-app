@@ -9,11 +9,12 @@ function installCriticalMocks(page: { addInitScript: (fn: () => void) => Promise
   accounts: { id: number; name: string; account_type: string; balance: number; currency: string }[];
   transactions: { id: number; amount: number; transaction_type: string }[];
   transfers: { id: number; from_account_id: number; to_account_id: number; amount: number; date: string }[];
-  summary: { total_balance: number; income_month: number; expense_month: number; currencies: string[] };
+  summary: { total_balance: number; income_month: number; expense_month: number; currencies: string[]; base_currency: string };
 }) {
   return page.addInitScript((s: typeof state) => {
     const mockState = s as typeof state;
     if (!mockState.summary.currencies) mockState.summary.currencies = [];
+    if (!mockState.summary.base_currency) mockState.summary.base_currency = 'KZT';
 
     // @ts-expect-error Mock Tauri
     window.__TAURI__ = {
@@ -127,13 +128,14 @@ test.describe('Critical: Account and transactions', () => {
       income_month: 0,
       expense_month: 0,
       currencies: ['KZT'],
+      base_currency: 'KZT',
     },
   };
 
   test.beforeEach(async ({ page }) => {
     state.transactions = [];
     state.transfers = [];
-    state.summary = { total_balance: 150000, income_month: 0, expense_month: 0, currencies: ['KZT'] };
+    state.summary = { total_balance: 150000, income_month: 0, expense_month: 0, currencies: ['KZT'], base_currency: 'KZT' };
     await installCriticalMocks(page, state);
     await page.goto('/');
   });
@@ -170,7 +172,7 @@ test.describe('Critical: Export', () => {
     accounts: [{ id: 1, name: 'Основной', account_type: 'checking', balance: 10000, currency: 'KZT' }],
     transactions: [],
     transfers: [],
-    summary: { total_balance: 10000, income_month: 0, expense_month: 0, currencies: ['KZT'] },
+    summary: { total_balance: 10000, income_month: 0, expense_month: 0, currencies: ['KZT'], base_currency: 'KZT' },
   };
 
   test.beforeEach(async ({ page }) => {
@@ -190,7 +192,7 @@ test.describe('Critical: Settings page', () => {
       accounts: [{ id: 1, name: 'Основной', account_type: 'checking', balance: 10000, currency: 'KZT' }],
       transactions: [],
       transfers: [],
-      summary: { total_balance: 10000, income_month: 0, expense_month: 0, currencies: ['KZT'] },
+      summary: { total_balance: 10000, income_month: 0, expense_month: 0, currencies: ['KZT'], base_currency: 'KZT' },
     });
   });
 
@@ -210,7 +212,7 @@ test.describe('Critical: Reports page', () => {
         get_current_session: () => ({ id: 1, username: 'test', display_name: 'Test User' }),
         get_accounts: () => [{ id: 1, name: 'Основной', account_type: 'checking', balance: 0, currency: 'KZT' }],
         get_categories: () => [{ id: 1, name: 'Продукты', category_type: 'expense', icon: null, color: null, parent_id: null }],
-        get_summary: () => ({ total_balance: 0, income_month: 0, expense_month: 0, currencies: ['KZT'] }),
+        get_summary: () => ({ total_balance: 0, income_month: 0, expense_month: 0, currencies: ['KZT'], base_currency: 'KZT' }),
         get_expense_by_category: () => [],
         get_monthly_totals: () => [],
         get_forecast_details: () => ({ overall: { predicted_expense: 0, confidence_low: 0, confidence_high: 0, trend: 'stable', trend_percent: 0 }, by_category: [] }),

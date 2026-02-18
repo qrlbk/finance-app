@@ -16,6 +16,73 @@ pub fn get_summary(
     with_connection_and_user(&app_handle, &state, db::get_summary)
 }
 
+#[tauri::command]
+pub fn get_base_currency(
+    app_handle: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<String, String> {
+    with_connection_and_user(&app_handle, &state, |conn, user_id| {
+        let cur = db::get_setting(conn, user_id, "base_currency")?
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "KZT".to_string());
+        Ok(cur)
+    })
+}
+
+#[derive(serde::Deserialize)]
+pub struct SetBaseCurrencyInput {
+    base_currency: String,
+}
+
+#[tauri::command]
+pub fn set_base_currency(
+    app_handle: tauri::AppHandle,
+    state: State<AppState>,
+    input: SetBaseCurrencyInput,
+) -> Result<(), String> {
+    let cur = input.base_currency.trim();
+    if cur.is_empty() {
+        return Err("Базовая валюта не может быть пустой".to_string());
+    }
+    with_connection_and_user(&app_handle, &state, |conn, user_id| {
+        db::set_setting(conn, user_id, "base_currency", cur)
+    })
+}
+
+#[tauri::command]
+pub fn get_exchange_rates(
+    app_handle: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<Vec<db::ExchangeRateRow>, String> {
+    with_connection_and_user(&app_handle, &state, db::get_exchange_rates)
+}
+
+#[derive(serde::Deserialize)]
+pub struct AddExchangeRateInput {
+    from_currency: String,
+    to_currency: String,
+    rate: f64,
+    date: String,
+}
+
+#[tauri::command]
+pub fn add_exchange_rate(
+    app_handle: tauri::AppHandle,
+    state: State<AppState>,
+    input: AddExchangeRateInput,
+) -> Result<(), String> {
+    with_connection_and_user(&app_handle, &state, |conn, user_id| {
+        db::add_exchange_rate(
+            conn,
+            user_id,
+            input.from_currency.trim(),
+            input.to_currency.trim(),
+            input.rate,
+            input.date.trim(),
+        )
+    })
+}
+
 #[derive(Deserialize)]
 pub struct GetExpenseByCategoryInput {
     year: i32,
@@ -129,5 +196,20 @@ pub fn restore_backup(app_handle: tauri::AppHandle, path: String) -> Result<(), 
         fs::rename(&db_path, &old_path).map_err(|e| e.to_string())?;
     }
     fs::copy(backup_path, &db_path).map_err(|e| e.to_string())?;
+
+    // Проверяем, что восстановленную БД можно открыть с текущим ключом (SQLCipher)
+    if let Err(e) = db::open_connection(&db_path) {
+        // Откат: восстанавливаем старую БД
+        let _ = std::fs::remove_file(&db_path);
+        if old_path.exists() {
+            let _ = fs::rename(&old_path, &db_path);
+        }
+        return Err(format!(
+            "{} {}",
+            messages::ERR_RESTORE_BACKUP_OPEN,
+            e
+        ));
+    }
+
     Ok(())
 }

@@ -2,6 +2,7 @@
 //!
 //! Обеспечивает генерацию, хранение и получение ключа шифрования базы данных.
 
+use crate::messages;
 use directories::ProjectDirs;
 use rand::Rng;
 use std::fs;
@@ -24,7 +25,7 @@ pub fn get_or_create_key() -> Result<String, String> {
     if key_path.exists() {
         // Читаем существующий ключ
         let key = fs::read_to_string(&key_path)
-            .map_err(|e| format!("Failed to read encryption key: {}", e))?;
+            .map_err(|e| format!("{}: {}", messages::ERR_READ_ENCRYPTION_KEY, e))?;
 
         // Валидация ключа (должен быть hex строкой правильной длины)
         if key.len() == KEY_LENGTH * 2 && key.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -33,20 +34,20 @@ pub fn get_or_create_key() -> Result<String, String> {
             // Ключ поврежден, генерируем новый
             let new_key = generate_secure_key();
             fs::write(&key_path, &new_key)
-                .map_err(|e| format!("Failed to write encryption key: {}", e))?;
+                .map_err(|e| format!("{}: {}", messages::ERR_WRITE_ENCRYPTION_KEY, e))?;
             Ok(new_key)
         }
     } else {
         // Создаем директорию если не существует
         if let Some(parent) = key_path.parent() {
             fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create key directory: {}", e))?;
+                .map_err(|e| format!("{}: {}", messages::ERR_CREATE_KEY_DIRECTORY, e))?;
         }
 
         // Генерируем новый ключ
         let key = generate_secure_key();
         fs::write(&key_path, &key)
-            .map_err(|e| format!("Failed to write encryption key: {}", e))?;
+            .map_err(|e| format!("{}: {}", messages::ERR_WRITE_ENCRYPTION_KEY, e))?;
 
         // Устанавливаем ограничения доступа на Unix системах
         #[cfg(unix)]
@@ -91,7 +92,7 @@ pub fn key_exists() -> bool {
 pub fn delete_key() -> Result<(), String> {
     let key_path = get_key_path()?;
     if key_path.exists() {
-        fs::remove_file(&key_path).map_err(|e| format!("Failed to delete key: {}", e))?;
+        fs::remove_file(&key_path).map_err(|e| format!("{}: {}", messages::ERR_DELETE_KEY, e))?;
     }
     Ok(())
 }

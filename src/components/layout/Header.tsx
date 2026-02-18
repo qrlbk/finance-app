@@ -11,15 +11,21 @@ function formatAmount(amount: number) {
   }).format(amount);
 }
 
+function currencyLabel(code: string) {
+  const symbols: Record<string, string> = { KZT: "₸", USD: "$", EUR: "€", RUB: "₽" };
+  return symbols[code] ?? code;
+}
+
 interface HeaderProps {
   title: string;
   totalBalance?: number;
   balanceLoading?: boolean;
   budgetAlerts?: BudgetAlert[];
   currencies?: string[];
+  baseCurrency?: string;
 }
 
-export function Header({ title, totalBalance, balanceLoading, budgetAlerts = [], currencies = [] }: HeaderProps) {
+export function Header({ title, totalBalance, balanceLoading, budgetAlerts = [], currencies = [], baseCurrency = "KZT" }: HeaderProps) {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const alertsRef = useRef<HTMLDivElement>(null);
 
@@ -75,21 +81,20 @@ export function Header({ title, totalBalance, balanceLoading, budgetAlerts = [],
           </div>
         )}
 
-        {/* Multi-currency warning */}
+        {/* Multi-currency: show base currency label when multiple currencies */}
         {currencies.length > 1 && (
-          <span className="text-xs text-amber-600 dark:text-amber-400 max-w-[140px] sm:max-w-[180px] truncate" title="Итоги без конвертации. Для корректного баланса используйте одну валюту.">
-            Несколько валют
+          <span className="text-xs text-zinc-500 dark:text-zinc-400 max-w-[140px] sm:max-w-[180px] truncate" title="Итоги в базовой валюте. Настройте курсы в Настройках.">
+            в {baseCurrency}
           </span>
         )}
         {/* Balance display */}
-        <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800/50" title={currencies.length > 1 ? "Итоги без конвертации. Для корректного баланса используйте одну валюту." : undefined}>
+        <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800/50" title={currencies.length > 1 ? `Итог в базовой валюте (${baseCurrency}). Курсы в Настройках.` : undefined}>
           <Wallet size={18} className="text-blue-400" />
           {balanceLoading ? (
             <div className="h-5 w-24 rounded bg-zinc-200 dark:bg-zinc-700 animate-pulse" />
           ) : (
             <span className="font-medium text-blue-400">
-              {formatAmount(totalBalance ?? 0)} ₸
-              {currencies.length > 1 && <span className="ml-1 text-xs font-normal text-amber-600 dark:text-amber-400">(без конвертации)</span>}
+              {formatAmount(totalBalance ?? 0)} {currencyLabel(baseCurrency)}
             </span>
           )}
         </div>

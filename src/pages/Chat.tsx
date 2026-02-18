@@ -18,7 +18,7 @@ async function buildChatContext(): Promise<string> {
   try {
     const summary = await api.getSummary();
     parts.push(
-      `Баланс: ${formatAmount(summary.total_balance)} ₸. Доход за текущий месяц: ${formatAmount(summary.income_month)} ₸. Расход за текущий месяц: ${formatAmount(summary.expense_month)} ₸.`
+      `Баланс: ${formatAmount(summary.total_balance)} ${summary.base_currency ?? "KZT"}. Доход за текущий месяц: ${formatAmount(summary.income_month)}. Расход за текущий месяц: ${formatAmount(summary.expense_month)}.`
     );
     if (summary.currencies.length > 0) {
       parts.push(`Валюты в приложении: ${summary.currencies.join(", ")}.`);

@@ -19,7 +19,7 @@ test.describe('Navigation', () => {
               { id: 1, name: 'Продукты', category_type: 'expense', icon: null, color: '#22c55e' },
               { id: 2, name: 'Зарплата', category_type: 'income', icon: null, color: '#3b82f6' },
             ],
-            get_summary: { total_balance: 100000, income_month: 500000, expense_month: 200000 },
+            get_summary: { total_balance: 100000, income_month: 500000, expense_month: 200000, currencies: ['KZT'], base_currency: 'KZT' },
             get_transactions: [],
             get_monthly_totals: [
               { month: '2024-01', income: 500000, expense: 200000 },

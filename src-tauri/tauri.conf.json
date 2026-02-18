@@ -26,6 +26,7 @@
   },
   "bundle": {
     "active": true,
+    "licenseFile": "LICENSE.txt",
     "targets": [
       "nsis",
       "dmg",

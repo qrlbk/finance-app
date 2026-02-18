@@ -1,5 +1,5 @@
 use chrono::{Datelike, Duration, NaiveDate};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::messages;
@@ -54,6 +54,117 @@ pub struct Summary {
     pub expense_month: f64,
     /// Distinct currencies used across accounts (for multi-currency warning)
     pub currencies: Vec<String>,
+    /// Currency in which total_balance, income_month, expense_month are expressed (user's base currency)
+    pub base_currency: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExchangeRateRow {
+    pub from_currency: String,
+    pub to_currency: String,
+    pub rate: f64,
+    pub date: String,
+}
+
+/// Returns user setting value or None if not set.
+pub fn get_setting(conn: &Connection, user_id: i64, key: &str) -> Result<Option<String>, String> {
+    let opt: Option<String> = conn
+        .query_row(
+            "SELECT value FROM user_settings WHERE user_id = ?1 AND key = ?2",
+            rusqlite::params![user_id, key],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(opt)
+}
+
+/// Sets a user setting (insert or replace).
+pub fn set_setting(conn: &Connection, user_id: i64, key: &str, value: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO user_settings (user_id, key, value) VALUES (?1, ?2, ?3)",
+        rusqlite::params![user_id, key, value],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Gets the latest exchange rate from from_currency to to_currency (rate: 1 from = rate to).
+/// Returns None if no rate is stored (same currency returns Some(1.0) in get_summary).
+fn get_exchange_rate(
+    conn: &Connection,
+    user_id: i64,
+    from_currency: &str,
+    to_currency: &str,
+) -> Result<Option<f64>, String> {
+    if from_currency == to_currency {
+        return Ok(Some(1.0));
+    }
+    let direct: Option<f64> = conn
+        .query_row(
+            "SELECT rate FROM exchange_rates WHERE user_id = ?1 AND from_currency = ?2 AND to_currency = ?3 ORDER BY date DESC LIMIT 1",
+            rusqlite::params![user_id, from_currency, to_currency],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if let Some(r) = direct {
+        return Ok(Some(r));
+    }
+    let inverse: Option<f64> = conn
+        .query_row(
+            "SELECT rate FROM exchange_rates WHERE user_id = ?1 AND from_currency = ?2 AND to_currency = ?3 ORDER BY date DESC LIMIT 1",
+            rusqlite::params![user_id, to_currency, from_currency],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(inverse.map(|r| 1.0 / r))
+}
+
+/// Lists all exchange rates for the user (latest per pair by date).
+pub fn get_exchange_rates(conn: &Connection, user_id: i64) -> Result<Vec<ExchangeRateRow>, String> {
+    let sql = "
+        SELECT e.from_currency, e.to_currency, e.rate, e.date FROM exchange_rates e
+        WHERE e.user_id = ?1 AND e.date = (
+            SELECT MAX(date) FROM exchange_rates WHERE user_id = ?1 AND from_currency = e.from_currency AND to_currency = e.to_currency
+        )
+        ORDER BY e.from_currency, e.to_currency";
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([user_id, user_id], |row| {
+            Ok(ExchangeRateRow {
+                from_currency: row.get(0)?,
+                to_currency: row.get(1)?,
+                rate: row.get(2)?,
+                date: row.get(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+/// Adds an exchange rate (from_currency -> to_currency = rate on date).
+pub fn add_exchange_rate(
+    conn: &Connection,
+    user_id: i64,
+    from_currency: &str,
+    to_currency: &str,
+    rate: f64,
+    date: &str,
+) -> Result<(), String> {
+    if from_currency == to_currency {
+        return Err("Валюта источника и назначения должны отличаться".to_string());
+    }
+    if rate <= 0.0 {
+        return Err("Курс должен быть положительным".to_string());
+    }
+    conn.execute(
+        "INSERT INTO exchange_rates (user_id, from_currency, to_currency, rate, date) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![user_id, from_currency, to_currency, rate, date],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 pub fn get_accounts(conn: &Connection, user_id: i64) -> Result<Vec<Account>, String> {
@@ -550,29 +661,6 @@ pub fn delete_transaction(conn: &Connection, user_id: i64, id: i64) -> Result<()
 }
 
 pub fn get_summary(conn: &Connection, user_id: i64) -> Result<Summary, String> {
-    let total_balance: f64 = conn
-        .query_row("SELECT COALESCE(SUM(balance), 0) FROM accounts WHERE user_id = ?1", [user_id], |r| r.get(0))
-        .map_err(|e| e.to_string())?;
-
-    let now = chrono::Local::now();
-    let month_start = format!("{}-{:02}-01", now.year(), now.month());
-
-    let income_month: f64 = conn
-        .query_row(
-            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE user_id = ?1 AND type = 'income' AND date >= ?2",
-            rusqlite::params![user_id, &month_start],
-            |r| r.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-
-    let expense_month: f64 = conn
-        .query_row(
-            "SELECT COALESCE(ABS(SUM(amount)), 0) FROM transactions WHERE user_id = ?1 AND type = 'expense' AND date >= ?2",
-            rusqlite::params![user_id, &month_start],
-            |r| r.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-
     let currencies: Vec<String> = conn
         .prepare("SELECT DISTINCT currency FROM accounts WHERE user_id = ?1 ORDER BY currency")
         .map_err(|e| e.to_string())?
@@ -581,11 +669,71 @@ pub fn get_summary(conn: &Connection, user_id: i64) -> Result<Summary, String> {
         .filter_map(|r| r.ok())
         .collect();
 
+    let base_currency: String = get_setting(conn, user_id, "base_currency")?
+        .filter(|s| !s.is_empty())
+        .or_else(|| currencies.first().cloned())
+        .unwrap_or_else(|| "KZT".to_string());
+
+    let mut total_balance = 0.0;
+    let account_rows: Vec<(f64, String)> = conn
+        .prepare("SELECT balance, currency FROM accounts WHERE user_id = ?1")
+        .map_err(|e| e.to_string())?
+        .query_map([user_id], |row| Ok((row.get::<_, f64>(0)?, row.get::<_, String>(1)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    for (balance, currency) in account_rows {
+        let rate = get_exchange_rate(conn, user_id, &currency, &base_currency)?.unwrap_or(1.0);
+        total_balance += balance * rate;
+    }
+
+    let now = chrono::Local::now();
+    let month_start = format!("{}-{:02}-01", now.year(), now.month());
+
+    let income_rows: Vec<(f64, String)> = conn
+        .prepare(
+            "SELECT t.amount, a.currency FROM transactions t
+             JOIN accounts a ON t.account_id = a.id AND a.user_id = t.user_id
+             WHERE t.user_id = ?1 AND t.type = 'income' AND t.date >= ?2",
+        )
+        .map_err(|e| e.to_string())?
+        .query_map(rusqlite::params![user_id, &month_start], |row| {
+            Ok((row.get::<_, f64>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let mut income_month = 0.0;
+    for (amount, currency) in income_rows {
+        let rate = get_exchange_rate(conn, user_id, &currency, &base_currency)?.unwrap_or(1.0);
+        income_month += amount * rate;
+    }
+
+    let expense_rows: Vec<(f64, String)> = conn
+        .prepare(
+            "SELECT t.amount, a.currency FROM transactions t
+             JOIN accounts a ON t.account_id = a.id AND a.user_id = t.user_id
+             WHERE t.user_id = ?1 AND t.type = 'expense' AND t.date >= ?2",
+        )
+        .map_err(|e| e.to_string())?
+        .query_map(rusqlite::params![user_id, &month_start], |row| {
+            Ok((row.get::<_, f64>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let mut expense_month = 0.0;
+    for (amount, currency) in expense_rows {
+        let rate = get_exchange_rate(conn, user_id, &currency, &base_currency)?.unwrap_or(1.0);
+        expense_month += amount.abs() * rate;
+    }
+
     Ok(Summary {
         total_balance,
         income_month,
         expense_month,
         currencies,
+        base_currency,
     })
 }
 
@@ -1279,6 +1427,11 @@ mod tests {
     fn setup_test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         crate::db::schema::create_tables(&conn).unwrap();
+        // Ensure user 1 exists for FK (user_settings, exchange_rates, categories, etc.)
+        let _ = conn.execute(
+            "INSERT OR IGNORE INTO users (id, username, password_hash, display_name) VALUES (1, 'test', 'hash', 'Test')",
+            [],
+        );
         crate::db::schema::seed_categories(&conn, 1).unwrap();
         conn
     }

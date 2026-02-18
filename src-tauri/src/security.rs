@@ -1,6 +1,7 @@
 //! Security utilities for input sanitization and validation
 
 use crate::error::{AppError, ValidationError};
+use crate::messages;
 
 /// Maximum allowed string length for various fields
 #[allow(dead_code)]
@@ -156,12 +157,12 @@ pub fn sanitize_path(path: &str) -> Result<String, AppError> {
     
     // Check for directory traversal attempts
     if path.contains("..") {
-        return Err(AppError::Validation("Invalid path: directory traversal not allowed".to_string()));
+        return Err(AppError::Validation(messages::ERR_INVALID_PATH_TRAVERSAL.to_string()));
     }
     
     // Check length
     if path.len() > limits::PATH_MAX_LEN {
-        return Err(AppError::Validation("Path too long".to_string()));
+        return Err(AppError::Validation(messages::ERR_PATH_TOO_LONG.to_string()));
     }
     
     Ok(path.to_string())

@@ -4,6 +4,8 @@ pub mod schema;
 use rusqlite::Connection;
 use std::path::PathBuf;
 
+use crate::messages;
+
 pub use queries::*;
 pub use schema::{clear_all_data, create_tables, seed_categories};
 
@@ -52,11 +54,11 @@ fn try_open_encrypted(db_path: &PathBuf) -> Result<Connection, String> {
         let pragma_sql = format!("PRAGMA key = \"x'{}'\"", key);
         let mut stmt = conn
             .prepare(&pragma_sql)
-            .map_err(|e| format!("Failed to configure SQLCipher: {}", e))?;
+            .map_err(|e| format!("{}: {}", messages::ERR_SQLCIPHER_CONFIGURE, e))?;
         let mut rows = stmt
             .query([])
-            .map_err(|e| format!("Failed to configure SQLCipher: {}", e))?;
-        while let Some(_) = rows.next().map_err(|e| format!("Failed to configure SQLCipher: {}", e))? {}
+            .map_err(|e| format!("{}: {}", messages::ERR_SQLCIPHER_CONFIGURE, e))?;
+        while let Some(_) = rows.next().map_err(|e| format!("{}: {}", messages::ERR_SQLCIPHER_CONFIGURE, e))? {}
     }
 
     conn.execute_batch(
@@ -67,10 +69,10 @@ fn try_open_encrypted(db_path: &PathBuf) -> Result<Connection, String> {
          PRAGMA journal_mode = WAL;
          PRAGMA synchronous = NORMAL;",
     )
-    .map_err(|e| format!("Failed to configure SQLCipher: {}", e))?;
+    .map_err(|e| format!("{}: {}", messages::ERR_SQLCIPHER_CONFIGURE, e))?;
 
     conn.query_row("SELECT count(*) FROM sqlite_master", [], |_| Ok(()))
-        .map_err(|_| "Invalid encryption key or corrupted database".to_string())?;
+        .map_err(|_| messages::ERR_INVALID_KEY_OR_CORRUPTED.to_string())?;
 
     Ok(conn)
 }
@@ -137,7 +139,7 @@ pub fn migrate_to_encrypted(
     // Проверяем, что старая БД читается
     old_conn
         .query_row("SELECT count(*) FROM sqlite_master", [], |_| Ok(()))
-        .map_err(|e| format!("Source database is not valid: {}", e))?;
+        .map_err(|e| format!("{}: {}", messages::ERR_SOURCE_DB_NOT_VALID, e))?;
 
     // Экспортируем в зашифрованную БД (ключ в формате x'hex')
     old_conn
@@ -148,7 +150,7 @@ pub fn migrate_to_encrypted(
             new_path.display(),
             key
         ))
-        .map_err(|e| format!("Failed to migrate database: {}", e))?;
+        .map_err(|e| format!("{}: {}", messages::ERR_MIGRATE_DATABASE, e))?;
 
     Ok(())
 }
@@ -181,11 +183,11 @@ pub fn ensure_encrypted(db_path: &PathBuf) -> Result<(), String> {
     // Создаем бэкап старой БД
     let backup_path = db_path.with_extension("db.unencrypted.bak");
     std::fs::rename(db_path, &backup_path)
-        .map_err(|e| format!("Failed to backup old database: {}", e))?;
+        .map_err(|e| format!("{}: {}", messages::ERR_BACKUP_OLD_DATABASE, e))?;
 
     // Переименовываем новую БД
     std::fs::rename(&temp_path, db_path)
-        .map_err(|e| format!("Failed to rename encrypted database: {}", e))?;
+        .map_err(|e| format!("{}: {}", messages::ERR_RENAME_ENCRYPTED_DATABASE, e))?;
 
     // Удаляем WAL и SHM файлы от старой БД если есть
     let wal_path = backup_path.with_extension("db.unencrypted.bak-wal");

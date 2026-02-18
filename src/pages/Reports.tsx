@@ -62,7 +62,7 @@ function renderCustomLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent
 export function Reports() {
   const [categoryData, setCategoryData] = useState<{ category_name: string; total: number }[]>([]);
   const [monthlyData, setMonthlyData] = useState<{ month: string; income: number; expense: number }[]>([]);
-  const [summary, setSummary] = useState<{ total_balance: number; income_month: number; expense_month: number } | null>(null);
+  const [summary, setSummary] = useState<{ total_balance: number; income_month: number; expense_month: number; base_currency?: string } | null>(null);
   const [forecast, setForecast] = useState<ForecastDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

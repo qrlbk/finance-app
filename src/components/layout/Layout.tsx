@@ -74,6 +74,7 @@ export function Layout() {
           balanceLoading={loading}
           budgetAlerts={budgetAlerts}
           currencies={summary?.currencies ?? []}
+          baseCurrency={summary?.base_currency ?? "KZT"}
         />
         <main className="flex-1 p-6 overflow-y-auto">
           <Outlet />

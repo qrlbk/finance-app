@@ -4,12 +4,17 @@ import type { Summary } from "../../lib/api";
 
 const COLORS = ["#22c55e", "#3b82f6", "#f97316", "#eab308", "#ec4899", "#8b5cf6"];
 
-function formatAmount(amount: number) {
+function currencyLabel(code: string) {
+  const symbols: Record<string, string> = { KZT: "₸", USD: "$", EUR: "€", RUB: "₽" };
+  return symbols[code] ?? code;
+}
+
+function formatAmount(amount: number, baseCurrency: string = "KZT") {
   return new Intl.NumberFormat("ru-KZ", {
     style: "decimal",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(amount) + " ₸";
+  }).format(amount) + " " + currencyLabel(baseCurrency);
 }
 
 interface SummaryCardsProps {
@@ -56,11 +61,11 @@ export function SummaryCards({ summary, loading, expenseByCategory = [], currenc
               <span className="text-sm font-medium">Общий баланс</span>
             </div>
             <p className="text-4xl font-bold mb-2">
-              {formatAmount(summary.total_balance)}
+              {formatAmount(summary.total_balance, summary.base_currency ?? "KZT")}
             </p>
             {currencies.length > 1 && (
-              <p className="text-sm text-blue-200/90 mb-2" title="Итоги без конвертации. Для корректного баланса используйте одну валюту.">
-                Несколько валют ({currencies.join(", ")})
+              <p className="text-sm text-blue-200/90 mb-2" title="Итоги в базовой валюте. Курсы в Настройках.">
+                в {summary.base_currency ?? "KZT"} ({currencies.join(", ")})
               </p>
             )}
             <div className="flex items-center gap-1 text-sm">
@@ -114,7 +119,7 @@ export function SummaryCards({ summary, loading, expenseByCategory = [], currenc
                   <span className="text-zinc-600 dark:text-zinc-300 truncate max-w-[100px]">{item.name}</span>
                 </div>
                 <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                  {formatAmount(item.value)}
+                  {formatAmount(item.value, summary.base_currency ?? "KZT")}
                 </span>
               </div>
             ))}
@@ -134,7 +139,7 @@ export function SummaryCards({ summary, loading, expenseByCategory = [], currenc
             <div>
               <p className="text-sm text-zinc-500 dark:text-zinc-400">Доход за месяц</p>
               <p className="text-xl font-semibold text-emerald-500">
-                +{formatAmount(summary.income_month)}
+                +{formatAmount(summary.income_month, summary.base_currency ?? "KZT")}
               </p>
             </div>
           </div>
@@ -151,7 +156,7 @@ export function SummaryCards({ summary, loading, expenseByCategory = [], currenc
             <div>
               <p className="text-sm text-zinc-500 dark:text-zinc-400">Расход за месяц</p>
               <p className="text-xl font-semibold text-red-500">
-                -{formatAmount(summary.expense_month)}
+                -{formatAmount(summary.expense_month, summary.base_currency ?? "KZT")}
               </p>
             </div>
           </div>

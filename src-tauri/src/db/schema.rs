@@ -109,7 +109,7 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
             "ALTER TABLE recurring ADD COLUMN note TEXT",
             [],
         )
-        .map_err(|e| format!("Failed to add note column: {}", e))?;
+        .map_err(|e| format!("Не удалось добавить колонку note: {}", e))?;
     }
 
     // Migration: Add end_date column to recurring table
@@ -118,7 +118,7 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
             "ALTER TABLE recurring ADD COLUMN end_date TEXT",
             [],
         )
-        .map_err(|e| format!("Failed to add end_date column: {}", e))?;
+        .map_err(|e| format!("Не удалось добавить колонку end_date: {}", e))?;
     }
 
     // Migration: Add is_active column to recurring table
@@ -127,7 +127,7 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
             "ALTER TABLE recurring ADD COLUMN is_active INTEGER DEFAULT 1",
             [],
         )
-        .map_err(|e| format!("Failed to add is_active column: {}", e))?;
+        .map_err(|e| format!("Не удалось добавить колонку is_active: {}", e))?;
     }
 
     // Migration: Add last_processed column to recurring table
@@ -136,7 +136,7 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
             "ALTER TABLE recurring ADD COLUMN last_processed TEXT",
             [],
         )
-        .map_err(|e| format!("Failed to add last_processed column: {}", e))?;
+        .map_err(|e| format!("Не удалось добавить колонку last_processed: {}", e))?;
     }
 
     // Migration: Create transfers table for transfer history
@@ -162,7 +162,7 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
             CREATE INDEX IF NOT EXISTS idx_transfers_date ON transfers(date);
             ",
         )
-        .map_err(|e| format!("Failed to create transfers table: {}", e))?;
+        .map_err(|e| format!("Не удалось создать таблицу transfers: {}", e))?;
     }
 
     // Migration: category_rules for ML hybrid (note_normalized -> category_id)
@@ -177,7 +177,41 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
             CREATE INDEX IF NOT EXISTS idx_category_rules_note ON category_rules(note_normalized);
             ",
         )
-        .map_err(|e| format!("Failed to create category_rules table: {}", e))?;
+        .map_err(|e| format!("Не удалось создать таблицу category_rules: {}", e))?;
+    }
+
+    // Migration: user_settings for base_currency and other preferences
+    if !has_table("user_settings") {
+        conn.execute_batch(
+            "CREATE TABLE user_settings (
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                PRIMARY KEY (user_id, key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id);
+            ",
+        )
+        .map_err(|e| format!("Не удалось создать таблицу user_settings: {}", e))?;
+    }
+
+    // Migration: exchange_rates for multi-currency conversion
+    if !has_table("exchange_rates") {
+        conn.execute_batch(
+            "CREATE TABLE exchange_rates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                from_currency TEXT NOT NULL,
+                to_currency TEXT NOT NULL,
+                rate REAL NOT NULL,
+                date TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_exchange_rates_user_from_to ON exchange_rates(user_id, from_currency, to_currency);
+            CREATE INDEX IF NOT EXISTS idx_exchange_rates_date ON exchange_rates(date);
+            ",
+        )
+        .map_err(|e| format!("Не удалось создать таблицу exchange_rates: {}", e))?;
     }
 
     // Migration: users table for multi-user support
@@ -193,7 +227,7 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
             CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
             ",
         )
-        .map_err(|e| format!("Failed to create users table: {}", e))?;
+        .map_err(|e| format!("Не удалось создать таблицу users: {}", e))?;
     }
 
     // Migration: add user_id to data tables
@@ -210,7 +244,7 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
                 &format!("ALTER TABLE {} ADD COLUMN user_id INTEGER REFERENCES users(id)", table),
                 [],
             )
-            .map_err(|e| format!("Failed to add user_id to {}: {}", table, e))?;
+            .map_err(|e| format!("Не удалось добавить user_id в {}: {}", table, e))?;
         }
     }
     if !has_column("category_rules", "user_id") {
@@ -218,7 +252,7 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
             "ALTER TABLE category_rules ADD COLUMN user_id INTEGER REFERENCES users(id)",
             [],
         )
-        .map_err(|e| format!("Failed to add user_id to category_rules: {}", e))?;
+        .map_err(|e| format!("Не удалось добавить user_id в category_rules: {}", e))?;
     }
 
     // Backfill: создаём пользователя "default" только при миграции существующих данных (есть счета/транзакции/категории).
@@ -242,14 +276,14 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
             "INSERT INTO users (id, username, password_hash, display_name) VALUES (1, 'default', ?1, 'Пользователь')",
             rusqlite::params![hash],
         )
-        .map_err(|e| format!("Failed to insert default user: {}", e))?;
+        .map_err(|e| format!("Не удалось вставить пользователя по умолчанию: {}", e))?;
         for table in ["accounts", "categories", "transactions", "recurring", "budgets", "transfers", "category_rules"] {
             if has_column(table, "user_id") {
                 conn.execute(
                     &format!("UPDATE {} SET user_id = 1 WHERE user_id IS NULL", table),
                     [],
                 )
-                .map_err(|e| format!("Failed to backfill user_id in {}: {}", table, e))?;
+                .map_err(|e| format!("Не удалось заполнить user_id в {}: {}", table, e))?;
             }
         }
     }
@@ -276,7 +310,7 @@ fn run_migrations(conn: &Connection) -> Result<(), String> {
                 &format!("CREATE INDEX IF NOT EXISTS {} ON {}(user_id)", idx_name, table),
                 [],
             )
-            .map_err(|e| format!("Failed to create index {}: {}", idx_name, e))?;
+            .map_err(|e| format!("Не удалось создать индекс {}: {}", idx_name, e))?;
         }
     }
 
@@ -298,6 +332,10 @@ fn default_user_password_hash(password: &str) -> String {
 /// После вызова можно вызвать `seed_categories(conn, user_id)` для восстановления категорий по умолчанию.
 pub fn clear_all_data(conn: &Connection, user_id: i64) -> Result<(), String> {
     conn.execute("DELETE FROM category_rules WHERE user_id = ?1", [user_id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM exchange_rates WHERE user_id = ?1", [user_id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM user_settings WHERE user_id = ?1", [user_id])
         .map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM budgets WHERE user_id = ?1", [user_id])
         .map_err(|e| e.to_string())?;

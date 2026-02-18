@@ -29,7 +29,7 @@ test.describe('Ollama / LLM integration', () => {
           }
           if (cmd === 'get_accounts') return mockState.accounts;
           if (cmd === 'get_categories') return mockState.categories;
-          if (cmd === 'get_summary') return { total_balance: 100000, income_month: 0, expense_month: 0, currencies: ['KZT'] };
+          if (cmd === 'get_summary') return { total_balance: 100000, income_month: 0, expense_month: 0, currencies: ['KZT'], base_currency: 'KZT' };
           if (cmd === 'get_transactions') return mockState.transactions;
           if (cmd === 'get_transfers') return [];
           if (cmd === 'get_budgets') return [];

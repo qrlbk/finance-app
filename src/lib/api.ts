@@ -51,6 +51,14 @@ export interface Summary {
   income_month: number;
   expense_month: number;
   currencies: string[];
+  base_currency: string;
+}
+
+export interface ExchangeRateRow {
+  from_currency: string;
+  to_currency: string;
+  rate: number;
+  date: string;
 }
 
 // ML Types
@@ -303,6 +311,16 @@ export const api = {
   deleteTransaction: (id: number) => invoke("delete_transaction", { id }),
 
   getSummary: () => invoke<Summary>("get_summary"),
+  getBaseCurrency: () => invoke<string>("get_base_currency"),
+  setBaseCurrency: (baseCurrency: string) =>
+    invoke("set_base_currency", { input: { base_currency: baseCurrency } }),
+  getExchangeRates: () => invoke<ExchangeRateRow[]>("get_exchange_rates"),
+  addExchangeRate: (input: {
+    from_currency: string;
+    to_currency: string;
+    rate: number;
+    date: string;
+  }) => invoke("add_exchange_rate", { input }),
 
   getExpenseByCategory: (input: { year: number; month: number; include_children?: boolean }) =>
     invoke<{ category_name: string; total: number }[]>("get_expense_by_category", { input }),
