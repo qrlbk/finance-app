@@ -1,40 +1,66 @@
-<p align="center">
-  <strong>Finance App</strong><br>
-  Personal finance manager. Offline-first. Your data stays on your device.
-</p>
+<div align="center">
 
-<p align="center">
-  <a href="README.ru.md">Русский</a> · <a href="README.kk.md">Қазақша</a>
-</p>
+# 💰 Finance App
 
----
+**Personal finance manager · Offline-first · Your data stays on your device**
 
-## What is this?
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Tauri](https://img.shields.io/badge/Tauri-2.0-FFC131?logo=tauri&logoColor=black)](https://tauri.app/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)](https://github.com/qrlbk/finance-app)
 
-**Finance App** is a desktop app for tracking money: accounts, transactions, budgets, and forecasts. It’s built with [Tauri](https://tauri.app/) (Rust) and [React](https://react.dev/), runs on **macOS**, **Windows**, and **Linux**, and works **fully offline**. Data is stored locally in an encrypted SQLite database (SQLCipher).
+[English](README.md) · [Русский](README.ru.md) · [Қазақша](README.kk.md)
 
-- **Privacy-first** — Nothing is sent to the cloud; everything stays on your machine.
-- **Multi-language UI** — Kazakh, Russian, and English (switch in Settings).
-- **Smart features** — ML category suggestions, expense forecasting, anomaly detection, optional Ollama chat.
+</div>
 
 ---
 
-## Features
+## ✨ What is this?
 
-| Area | What you get |
-|------|----------------|
-| **Accounts** | Cash, card, savings; multi-currency (KZT, USD, EUR, RUB) and exchange rates. |
-| **Transactions** | Income & expenses with categories, notes, filters, and “Load more”. |
-| **Transfers** | Move money between your accounts; full history. |
-| **Budgets** | Limits per category (week / month / year) with alerts at 80% and 100%. |
-| **Recurring** | Auto payments (daily/weekly/monthly/yearly); processed on startup or by button. |
-| **Insights & reports** | Comparison with last month, forecast, savings tips, pie charts, trends. |
-| **Import / export** | CSV, JSON, XLSX; bank PDF (e.g. Kaspi); backup & restore. |
-| **App** | Dark/light theme, in-app Help (Docs) in three languages. |
+**Finance App** is a desktop app for tracking money: accounts, transactions, budgets, and forecasts. Built with [Tauri](https://tauri.app/) (Rust) and [React](https://react.dev/), it runs on **macOS**, **Windows**, and **Linux** and works **fully offline**. Data is stored locally in an encrypted SQLite database (SQLCipher).
+
+<table>
+<tr>
+<td width="33%">
+
+**🔒 Privacy-first**  
+Nothing is sent to the cloud; everything stays on your machine.
+
+</td>
+<td width="33%">
+
+**🌐 Multi-language**  
+Kazakh, Russian, and English — switch in Settings.
+
+</td>
+<td width="33%">
+
+**🧠 Smart features**  
+ML category suggestions, forecasting, anomaly detection, optional Ollama chat.
+
+</td>
+</tr>
+</table>
 
 ---
 
-## Quick start
+## 🚀 Features
+
+| | Area | What you get |
+|:---:|---|---|
+| 💳 | **Accounts** | Cash, card, savings; multi-currency (KZT, USD, EUR, RUB) and exchange rates. |
+| 📊 | **Transactions** | Income & expenses with categories, notes, filters, and “Load more”. |
+| 🔄 | **Transfers** | Move money between accounts; full history. |
+| 📈 | **Budgets** | Limits per category (week / month / year) with alerts at 80% and 100%. |
+| 🔁 | **Recurring** | Auto payments (daily/weekly/monthly/yearly); run on startup or by button. |
+| 📉 | **Insights & reports** | Compare with last month, forecast, savings tips, charts, trends. |
+| 📁 | **Import / export** | CSV, JSON, XLSX; bank PDF (e.g. Kaspi); backup & restore. |
+| ⚙️ | **App** | Dark/light theme, in-app Docs in three languages. |
+
+---
+
+## ⚡ Quick start
 
 **Requirements:** Node.js ≥ 18, Rust ≥ 1.75, [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
 
@@ -51,17 +77,21 @@ npm run tauri dev
 npm run tauri build
 ```
 
-Artifacts: **macOS** — `.app` in `src-tauri/target/release/bundle/macos/` · **Windows** — `.msi` in `src-tauri/target/release/bundle/msi/` · **Linux** — `.AppImage` in `src-tauri/target/release/bundle/appimage/`.
+| Platform | Output |
+|----------|--------|
+| **macOS** | `.app` → `src-tauri/target/release/bundle/macos/` |
+| **Windows** | `.msi` → `src-tauri/target/release/bundle/msi/` |
+| **Linux** | `.AppImage` → `src-tauri/target/release/bundle/appimage/` |
 
 ---
 
-## Project layout
+## 📁 Project layout
 
 ```
 finance-app/
 ├── src/                 # React frontend (TypeScript, Tailwind, i18next)
 │   ├── components/      # Layout, dashboard, UI
-│   ├── pages/           # Dashboard, Transactions, Accounts, Reports, Settings, Docs, …
+│   ├── pages/           # Dashboard, Transactions, Accounts, Reports, Settings, Docs
 │   ├── lib/             # API client, format helpers, i18n
 │   └── locales/         # kk.json, ru.json, en.json
 ├── src-tauri/           # Rust backend (Tauri 2, SQLite/SQLCipher, ML)
@@ -69,11 +99,11 @@ finance-app/
 └── e2e/                 # Playwright E2E
 ```
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for details.
+→ See [ARCHITECTURE.md](./ARCHITECTURE.md) for details.
 
 ---
 
-## Tests
+## 🧪 Tests
 
 ```bash
 npm run test          # Vitest (watch)
@@ -85,26 +115,30 @@ cd src-tauri && cargo test
 
 ---
 
-## Data & security
+## 🔐 Data & security
 
-- **DB path:** macOS `~/Library/Application Support/com.kuralbekadilet475.finance-app/` · Windows `%APPDATA%\com.kuralbekadilet475.finance-app\` · Linux `~/.local/share/finance-app/`.
-- **Backup:** Settings → Backup (create/restore).
+- **DB path:**  
+  **macOS** `~/Library/Application Support/com.kuralbekadilet475.finance-app/`  
+  **Windows** `%APPDATA%\com.kuralbekadilet475.finance-app\`  
+  **Linux** `~/.local/share/finance-app/`
+- **Backup:** Settings → Backup (create / restore).
 - **Encryption:** SQLCipher (AES-256). No data leaves the device; ML runs locally.
 
 ---
 
-## Tech stack
+## 🛠 Tech stack
 
 | Part | Stack |
 |------|--------|
-| Frontend | React 19, TypeScript, Vite 7, Tailwind CSS 4, React Router, Recharts, i18next |
-| Backend | Tauri 2, Rust, rusqlite + SQLCipher |
-| Tests | Vitest, Playwright, Rust tests |
+| **Frontend** | React 19 · TypeScript · Vite 7 · Tailwind CSS 4 · React Router · Recharts · i18next |
+| **Backend** | Tauri 2 · Rust · rusqlite + SQLCipher |
+| **Tests** | Vitest · Playwright · Rust tests |
 
 ---
 
-## License & author
+<div align="center">
 
-**MIT** · **Kuralbek Adilet**
+**MIT** · **Kuralbek Adilet**  
+[**github.com/qrlbk/finance-app**](https://github.com/qrlbk/finance-app)
 
-Repository: [github.com/qrlbk/finance-app](https://github.com/qrlbk/finance-app)
+</div>
